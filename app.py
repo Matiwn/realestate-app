@@ -7,7 +7,7 @@ import psycopg2
 import streamlit as st
 
 # ✅ MUST be the first Streamlit command and only once
-st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
+st.set_page_config(page_title="مشاور املاک نور", layout="wide")
 
 
 # ---------------------------
@@ -182,7 +182,10 @@ def load_excel(file) -> pd.DataFrame:
     # optional columns
     find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
     find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
-    find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
+    find_col(
+        "owner_phone",
+        lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n))
+    )
     find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
 
     # price total (prefer "قیمت کل")
@@ -330,7 +333,7 @@ def upsert_one(conn, row: dict):
 # ---------------------------
 # App UI
 # ---------------------------
-st.title("سیستم جستجوی املاک")
+st.title("مشاور املاک نور")
 
 conn = get_conn_safe()
 ensure_tables(conn)
@@ -373,43 +376,141 @@ else:
 
 
 # ---------------------------
-# Client: List tab (first tab)
+# Client: List tab (first tab) - Card style
 # ---------------------------
 if not is_admin:
     with tab_list:
         st.subheader("فایل‌های موجود")
 
-        page_size = st.selectbox("تعداد نمایش در هر صفحه", [50, 100, 200, 500], index=1)
-        page = st.number_input("شماره صفحه", min_value=1, value=1, step=1)
-        offset = (page - 1) * page_size
+        # --- Filters / Sorting ---
+        f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.2, 1.4])
+
+        with f1:
+            quick_q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...")
+
+        with f2:
+            deal_filter = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], index=0)
+
+        with f3:
+            sort_mode = st.selectbox(
+                "مرتب‌سازی",
+                ["جدیدترین", "ارزان‌ترین", "گران‌ترین", "بیشترین متراژ", "کمترین متراژ"],
+                index=0
+            )
+
+        with f4:
+            page_size = st.selectbox("تعداد در هر صفحه", [12, 24, 36, 60], index=1)
+
+        page = st.number_input("صفحه", min_value=1, value=1, step=1)
+        offset = (page - 1) * int(page_size)
+
+        where = ["1=1"]
+        params = []
+
+        if quick_q.strip():
+            q = f"%{quick_q.strip()}%"
+            where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s)")
+            params.extend([q, q, q])
+
+        if deal_filter != "همه":
+            where.append("deal_type = %s")
+            params.append(deal_filter)
+
+        order_by = "updated_at desc nulls last"
+        if sort_mode == "ارزان‌ترین":
+            order_by = "price_million asc nulls last, updated_at desc nulls last"
+        elif sort_mode == "گران‌ترین":
+            order_by = "price_million desc nulls last, updated_at desc nulls last"
+        elif sort_mode == "بیشترین متراژ":
+            order_by = "area_m2 desc nulls last, updated_at desc nulls last"
+        elif sort_mode == "کمترین متراژ":
+            order_by = "area_m2 asc nulls last, updated_at desc nulls last"
 
         conn = get_conn_safe()
 
-        total_df = pd.read_sql_query("select count(*) as cnt from properties", conn)
+        count_q = f"select count(*) as cnt from properties where {' and '.join(where)}"
+        total_df = pd.read_sql_query(count_q, conn, params=tuple(params))
         total = int(total_df.loc[0, "cnt"]) if not total_df.empty else 0
+        total_pages = max(1, (total + int(page_size) - 1) // int(page_size))
 
         select_cols = """
           file_code, deal_type, region, property_type, area_m2,
           price_million, address, description, updated_at
         """
-        q = f"""
+        data_q = f"""
           select {select_cols}
           from properties
-          order by updated_at desc nulls last
+          where {" and ".join(where)}
+          order by {order_by}
           limit %s offset %s
         """
-        res = pd.read_sql_query(q, conn, params=(int(page_size), int(offset)))
+        data_params = params + [int(page_size), int(offset)]
+        df = pd.read_sql_query(data_q, conn, params=tuple(data_params))
 
-        if res.empty:
-            st.info("فعلاً فایلی ثبت نشده است.")
+        st.caption(f"تعداد نتایج: {total} | صفحه {page} از {total_pages}")
+
+        if df.empty:
+            st.info("نتیجه‌ای پیدا نشد.")
         else:
-            res["قیمت (تومان)"] = res["price_million"].apply(toman_str_from_million)
-            res = res.drop(columns=["price_million"])
+            def safe_txt(x):
+                if x is None:
+                    return ""
+                s = str(x)
+                return "" if s.lower() == "nan" else s
 
-            st.caption(f"تعداد کل فایل‌ها: {total} | نمایش صفحه {page}")
-            st.dataframe(res, use_container_width=True)
+            cols = st.columns(3)
+            for i, row in df.iterrows():
+                col = cols[i % 3]
 
-            csv = res.to_csv(index=False).encode("utf-8-sig")
+                file_code = safe_txt(row.get("file_code"))
+                deal_type = safe_txt(row.get("deal_type"))
+                region = safe_txt(row.get("region"))
+                ptype = safe_txt(row.get("property_type"))
+                area = row.get("area_m2")
+                price_m = row.get("price_million")
+                address = safe_txt(row.get("address"))
+                desc = safe_txt(row.get("description"))
+                updated = row.get("updated_at")
+
+                price_toman = toman_str_from_million(price_m)
+
+                area_txt = ""
+                try:
+                    if area is not None and not (isinstance(area, float) and pd.isna(area)):
+                        area_txt = f"{float(area):.0f} متر"
+                except Exception:
+                    area_txt = safe_txt(area)
+
+                with col:
+                    st.markdown("---")
+                    st.markdown(f"### فایل {file_code}")
+
+                    line1 = " | ".join([x for x in [deal_type, ptype, f"منطقه {region}" if region else ""] if x])
+                    if line1:
+                        st.caption(line1)
+
+                    left, right = st.columns([1.2, 1])
+                    with left:
+                        st.markdown(f"**قیمت:** {price_toman if price_toman else 'نامشخص'}")
+                    with right:
+                        st.markdown(f"**متراژ:** {area_txt if area_txt else '—'}")
+
+                    if desc:
+                        preview = desc if len(desc) <= 90 else desc[:90] + "…"
+                        st.write(preview)
+
+                    with st.expander("جزئیات"):
+                        if address:
+                            st.write(f"**لوکیشن:** {address}")
+                        if desc:
+                            st.write(f"**توضیحات:** {desc}")
+                        if updated:
+                            st.caption(f"آخرین بروزرسانی: {updated}")
+
+            st.markdown("---")
+            out = df.copy()
+            out["price_toman"] = out["price_million"].apply(toman_str_from_million)
+            csv = out.drop(columns=["price_million"]).to_csv(index=False).encode("utf-8-sig")
             st.download_button("دانلود CSV همین صفحه", csv, f"files_page_{page}.csv", "text/csv")
 
 
@@ -618,6 +719,6 @@ if not is_admin:
     with tab_help:
         st.subheader("راهنما")
         st.write("شما در حالت مشتری هستید و فقط امکان مشاهده فایل‌ها و جستجو را دارید.")
-        st.write("برای بازدید ملک و اطلاعات بیشتر با شماره 09186985267 تماس بگیرید.")
+        st.write("اطلاعات مالک/شماره تماس/یادداشت داخلی فقط برای مدیر نمایش داده می‌شود.")
         st.write("قیمت‌ها بر حسب **میلیون** هستند (مثلاً 5 میلیارد = 5000).")
-
+```0
