@@ -39,7 +39,6 @@ def _make_conn():
         keepalives_interval=10,
         keepalives_count=3,
     )
-    # Important: avoid set_session errors and keep things simple
     conn.autocommit = True
     return conn
 
@@ -366,14 +365,56 @@ if st.session_state.role is None:
 
 is_admin = st.session_state.role == "admin"
 
+# Tabs
 if is_admin:
     tab_upload, tab_search, tab_add = st.tabs(["آپلود/آپدیت", "جستجو", "ثبت/ویرایش ملک"])
 else:
-    tab_search, tab_help = st.tabs(["جستجو", "راهنما"])
+    tab_list, tab_search, tab_help = st.tabs(["فایل‌ها", "جستجو", "راهنما"])
 
 
 # ---------------------------
-# Upload / Update (Admin)
+# Client: List tab (first tab)
+# ---------------------------
+if not is_admin:
+    with tab_list:
+        st.subheader("فایل‌های موجود")
+
+        page_size = st.selectbox("تعداد نمایش در هر صفحه", [50, 100, 200, 500], index=1)
+        page = st.number_input("شماره صفحه", min_value=1, value=1, step=1)
+        offset = (page - 1) * page_size
+
+        conn = get_conn_safe()
+
+        total_df = pd.read_sql_query("select count(*) as cnt from properties", conn)
+        total = int(total_df.loc[0, "cnt"]) if not total_df.empty else 0
+
+        select_cols = """
+          file_code, deal_type, region, property_type, area_m2,
+          price_million, address, description, updated_at
+        """
+        q = f"""
+          select {select_cols}
+          from properties
+          order by updated_at desc nulls last
+          limit %s offset %s
+        """
+        res = pd.read_sql_query(q, conn, params=(int(page_size), int(offset)))
+
+        if res.empty:
+            st.info("فعلاً فایلی ثبت نشده است.")
+        else:
+            res["قیمت (تومان)"] = res["price_million"].apply(toman_str_from_million)
+            res = res.drop(columns=["price_million"])
+
+            st.caption(f"تعداد کل فایل‌ها: {total} | نمایش صفحه {page}")
+            st.dataframe(res, use_container_width=True)
+
+            csv = res.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("دانلود CSV همین صفحه", csv, f"files_page_{page}.csv", "text/csv")
+
+
+# ---------------------------
+# Admin: Upload / Update tab
 # ---------------------------
 if is_admin:
     with tab_upload:
@@ -392,9 +433,21 @@ if is_admin:
                 clear_caches()
                 st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
 
+        st.divider()
+        st.subheader("آخرین آپلودها")
+        try:
+            conn = get_conn_safe()
+            logs = pd.read_sql_query(
+                "select uploaded_at, rows_read, rows_upserted from uploads order by id desc limit 20",
+                conn
+            )
+            st.dataframe(logs, use_container_width=True)
+        except Exception:
+            st.info("لاگ آپلودها فعلاً در دسترس نیست.")
+
 
 # ---------------------------
-# Add / Edit (Admin)
+# Admin: Add / Edit tab
 # ---------------------------
 if is_admin:
     with tab_add:
@@ -456,7 +509,7 @@ if is_admin:
 
 
 # ---------------------------
-# Search (Admin + Client)
+# Search tab (Admin + Client)
 # ---------------------------
 with tab_search:
     st.subheader("جستجو")
@@ -559,11 +612,11 @@ with tab_search:
 
 
 # ---------------------------
-# Help (Client)
+# Help tab (Client)
 # ---------------------------
 if not is_admin:
     with tab_help:
         st.subheader("راهنما")
-        st.write("شما در حالت مشتری هستید و فقط امکان جستجو و مشاهده فایل‌ها را دارید.")
+        st.write("شما در حالت مشتری هستید و فقط امکان مشاهده فایل‌ها و جستجو را دارید.")
         st.write("اطلاعات مالک/شماره تماس/یادداشت داخلی فقط برای مدیر نمایش داده می‌شود.")
         st.write("قیمت‌ها بر حسب **میلیون** هستند (مثلاً 5 میلیارد = 5000).")
