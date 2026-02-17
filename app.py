@@ -3,23 +3,20 @@ import re
 from datetime import datetime
 
 import pandas as pd
-import streamlit as st
 import psycopg2
+import streamlit as st
+
+
+# ✅ MUST be the first Streamlit command
+st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
 
 
 # ---------------------------
-# Secrets / Passwords
+# Config from Environment (Railway Variables)
 # ---------------------------
-def get_secret(name: str, default: str = "") -> str:
-    try:
-        return st.secrets.get(name, default)  # Streamlit Cloud
-    except Exception:
-        return os.environ.get(name, default)
-
-
-DATABASE_URL = get_secret("DATABASE_URL", "")
-ADMIN_PASSWORD = get_secret("ADMIN_PASSWORD", "Admin@123")
-CLIENT_PASSWORD = get_secret("CLIENT_PASSWORD", "1234")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@123")
+CLIENT_PASSWORD = os.environ.get("CLIENT_PASSWORD", "1234")
 
 
 def now_utc_ts():
@@ -32,7 +29,7 @@ def now_utc_ts():
 @st.cache_resource
 def get_conn():
     if not DATABASE_URL:
-        st.error("DATABASE_URL در Secrets تنظیم نشده است.")
+        st.error("DATABASE_URL تنظیم نشده. در Railway → Variables مقدار DATABASE_URL را وارد کن.")
         st.stop()
 
     conn = psycopg2.connect(
@@ -42,13 +39,11 @@ def get_conn():
         keepalives_interval=10,
         keepalives_count=3,
     )
-    # مهم: autocommit از ابتدا روشن باشد
     conn.autocommit = True
     return conn
 
 
 def get_conn_safe():
-    """Ping + recreate on drop (pooler can drop idle conns)."""
     try:
         conn = get_conn()
         with conn.cursor() as cur:
@@ -63,7 +58,7 @@ def get_conn_safe():
         return conn
 
 
-def ensure_tables_and_policies(conn):
+def ensure_tables(conn):
     with conn.cursor() as cur:
         cur.execute("""
         create table if not exists properties (
@@ -81,7 +76,6 @@ def ensure_tables_and_policies(conn):
           updated_at timestamp
         );
         """)
-
         cur.execute("""
         create table if not exists uploads (
           id bigserial primary key,
@@ -91,46 +85,9 @@ def ensure_tables_and_policies(conn):
         );
         """)
 
-        # RLS + policies (ignore if already enabled/exists)
-        try:
-            cur.execute("alter table properties enable row level security;")
-        except Exception:
-            pass
-        try:
-            cur.execute("""
-            do $$
-            begin
-              if not exists (select 1 from pg_policies where schemaname='public' and tablename='properties') then
-                create policy "Enable all access"
-                on properties for all
-                using (true) with check (true);
-              end if;
-            end $$;
-            """)
-        except Exception:
-            pass
-
-        try:
-            cur.execute("alter table uploads enable row level security;")
-        except Exception:
-            pass
-        try:
-            cur.execute("""
-            do $$
-            begin
-              if not exists (select 1 from pg_policies where schemaname='public' and tablename='uploads') then
-                create policy "Enable all access uploads"
-                on uploads for all
-                using (true) with check (true);
-              end if;
-            end $$;
-            """)
-        except Exception:
-            pass
-
 
 # ---------------------------
-# Normalizers / Parsers
+# Parsers
 # ---------------------------
 def normalize_deal_type(x) -> str:
     if x is None:
@@ -144,10 +101,6 @@ def normalize_deal_type(x) -> str:
 
 
 def parse_price_million(v) -> float | None:
-    """
-    واحد دیتابیس: میلیون
-    مثال: 5 میلیارد = 5000
-    """
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
     if isinstance(v, (int, float)):
@@ -188,7 +141,7 @@ def to_toman_from_million(x) -> str:
 
 
 # ---------------------------
-# Excel loader (Robust)
+# Excel loader
 # ---------------------------
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
@@ -200,32 +153,27 @@ def load_excel(file) -> pd.DataFrame:
     cols_norm = {c: norm(c) for c in cols}
     col_map = {}
 
-    # helpers to set if found
     def find_col(key, cond):
         for c in cols:
             if cond(cols_norm[c]):
                 col_map[key] = c
                 return
 
-    # file_code
     find_col("file_code", lambda n: ("کد" in n) and ("فایل" in n or "ملک" in n))
     if "file_code" not in col_map:
         find_col("file_code", lambda n: "کد" in n)
 
-    # deal_type, region, address, area_m2, property_type
     find_col("deal_type", lambda n: ("نوعمعامله" in n) or ("نوع" in n and "معامله" in n))
     find_col("region", lambda n: "منطقه" in n)
     find_col("address", lambda n: ("آدرس" in n) or ("ادرس" in n))
     find_col("area_m2", lambda n: "متراژ" in n)
     find_col("property_type", lambda n: ("نوعملک" in n) or ("نوع" in n and "ملک" in n))
 
-    # optional columns
     find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
     find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
     find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
     find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
 
-    # PRICE total (prefer "قیمت کل")
     find_col("price_total", lambda n: ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)))
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
@@ -264,7 +212,7 @@ def load_excel(file) -> pd.DataFrame:
 # ---------------------------
 # Cached helpers (speed)
 # ---------------------------
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=180)
 def fetch_distinct_cached(colname: str):
     conn = get_conn_safe()
     q = f"select distinct {colname} from properties where {colname} is not null and trim({colname})<>'' order by {colname}"
@@ -273,7 +221,7 @@ def fetch_distinct_cached(colname: str):
 
 
 # ---------------------------
-# Upsert helpers
+# Upsert
 # ---------------------------
 def upsert_properties(conn, df: pd.DataFrame) -> int:
     rows = 0
@@ -350,14 +298,14 @@ def upsert_one(conn, row: dict) -> None:
 
 
 # ---------------------------
-# UI
+# App start
 # ---------------------------
-st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
-st.title("سیستم جستجوی املاک (دایمی + پایدارتر)")
+st.title("سیستم جستجوی املاک")
 
 conn = get_conn_safe()
-ensure_tables_and_policies(conn)
+ensure_tables(conn)
 
+# --- Login ---
 if "role" not in st.session_state:
     st.session_state.role = None
 
@@ -398,11 +346,9 @@ if is_admin:
     with tab_upload:
         st.subheader("آپلود اکسل و بروزرسانی (فقط مدیر)")
         up = st.file_uploader("آپلود Excel", type=["xlsx"])
-
         if up is not None:
             df = load_excel(up)
             st.write("پیش‌نمایش:", df.head(30))
-
             if st.button("بروزرسانی دیتابیس"):
                 conn = get_conn_safe()
                 n = upsert_properties(conn, df)
@@ -430,7 +376,6 @@ if is_admin:
         st.subheader("ثبت یا ویرایش ملک (فقط مدیر)")
 
         c1, c2, c3 = st.columns(3)
-
         with c1:
             file_code = st.text_input("کد فایل (اجباری)")
             deal_type = st.selectbox("نوع معامله", ["خرید و فروش", "رهن و اجاره"])
@@ -497,7 +442,6 @@ with tab_search:
     st.subheader("جستجو")
 
     deal_opts = ["", "خرید و فروش", "رهن و اجاره"]
-
     try:
         prop_opts = [""] + fetch_distinct_cached("property_type")
         region_opts = [""] + fetch_distinct_cached("region")
@@ -506,7 +450,6 @@ with tab_search:
         region_opts = [""]
 
     c1, c2, c3, c4 = st.columns(4)
-
     with c1:
         deal = st.selectbox("نوع معامله", deal_opts, index=0)
         ptype = st.selectbox("نوع ملک", prop_opts, index=0)
@@ -530,31 +473,24 @@ with tab_search:
         if file_code_q.strip():
             where.append("file_code ILIKE %s")
             params.append(f"%{file_code_q.strip()}%")
-
         if deal:
             where.append("deal_type = %s")
             params.append(deal)
-
         if ptype:
             where.append("property_type = %s")
             params.append(ptype)
-
         if region:
             where.append("region = %s")
             params.append(region)
-
         if min_area > 0:
             where.append("area_m2 >= %s")
             params.append(float(min_area))
-
         if max_area > 0:
             where.append("area_m2 <= %s")
             params.append(float(max_area))
-
         if min_price > 0:
             where.append("price_million >= %s")
             params.append(float(min_price))
-
         if max_price > 0:
             where.append("price_million <= %s")
             params.append(float(max_price))
