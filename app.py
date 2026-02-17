@@ -108,6 +108,10 @@ def ensure_tables(conn):
             cur.execute("alter table properties add column if not exists bedrooms integer;")
         except Exception:
             pass
+        try:
+            cur.execute("alter table applicants add column if not exists notes text;")
+        except Exception:
+            pass
 
 
 # ---------------------------
@@ -182,8 +186,7 @@ def billion_str_from_million(x) -> str:
         b = float(x) / 1000.0
         if b >= 1:
             return f"{b:.2f} میلیارد"
-        else:
-            return f"{float(x):.0f} میلیون"
+        return f"{float(x):.0f} میلیون"
     except Exception:
         return ""
 
@@ -211,16 +214,12 @@ def parse_bedrooms(v) -> int | None:
 
 
 def has_bedrooms(property_type: str) -> bool:
-    """
-    Types that typically don't have bedrooms.
-    """
     pt = normalize_text(property_type).replace("‌", "").replace("\u200c", "").strip()
     if not pt:
         return True
 
     no_bed_keywords = [
-        "زمین", "اداری", "تجاری", "مغازه", "دفتر", "انبار", "سوله", "کارگاه",
-        "باغ", "باغچه"
+        "زمین", "اداری", "تجاری", "مغازه", "دفتر", "انبار", "سوله", "کارگاه", "باغ", "باغچه"
     ]
     return not any(k in pt for k in no_bed_keywords)
 
@@ -301,7 +300,7 @@ def load_excel(file) -> pd.DataFrame:
 
 
 # ---------------------------
-# Cached dropdown data (speed)
+# Cached data
 # ---------------------------
 @st.cache_data(ttl=180)
 def fetch_distinct_cached(colname: str):
@@ -325,28 +324,52 @@ def fetch_minmax_cached():
     df = pd.read_sql_query(q, conn)
     if df.empty:
         return 0.0, 0.0, 0.0, 0.0
+
     r = df.iloc[0].to_dict()
+
     def safe(v):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return 0.0
         return float(v)
+
     return safe(r.get("min_price")), safe(r.get("max_price")), safe(r.get("min_area")), safe(r.get("max_area"))
 
 
 def clear_caches():
-    try:
-        fetch_distinct_cached.clear()
-    except Exception:
-        pass
-    try:
-        fetch_minmax_cached.clear()
-    except Exception:
-        pass
+    for fn in (fetch_distinct_cached, fetch_minmax_cached):
+        try:
+            fn.clear()
+        except Exception:
+            pass
 
 
 # ---------------------------
-# DB Writes
+# DB Helpers/Writes
 # ---------------------------
+def property_exists(conn, file_code: str) -> bool:
+    if not file_code:
+        return False
+    with conn.cursor() as cur:
+        cur.execute("select 1 from properties where file_code=%s limit 1", (file_code,))
+        return cur.fetchone() is not None
+
+
+def fetch_property_by_code(conn, file_code: str) -> dict | None:
+    if not file_code:
+        return None
+    q = """
+    select file_code, deal_type, region, address, area_m2, price_million,
+           property_type, bedrooms, description, owner_name, owner_phone, internal_notes
+    from properties
+    where file_code = %s
+    limit 1
+    """
+    df = pd.read_sql_query(q, conn, params=(file_code,))
+    if df.empty:
+        return None
+    return df.iloc[0].to_dict()
+
+
 def upsert_properties(conn, df: pd.DataFrame) -> int:
     rows = 0
     with conn.cursor() as cur:
@@ -464,7 +487,7 @@ def update_applicant(conn, applicant_id: int, a: dict):
 
 
 # ---------------------------
-# App UI
+# UI
 # ---------------------------
 st.title("مشاور املاک نور")
 
@@ -502,20 +525,21 @@ is_admin = st.session_state.role == "admin"
 
 # Tabs
 if is_admin:
-    tab_upload, tab_search, tab_add, tab_applicants = st.tabs(["آپلود/آپدیت", "جستجو", "ثبت/ویرایش ملک", "متقاضیان"])
+    tab_admin_list, tab_upload, tab_search, tab_add, tab_applicants = st.tabs(
+        ["لیست فایل‌ها", "آپلود/آپدیت", "جستجو", "ثبت/ویرایش ملک", "متقاضیان"]
+    )
 else:
     tab_list, tab_search, tab_help = st.tabs(["فایل‌ها", "جستجو", "راهنما"])
 
 
 # ---------------------------
-# Client: List tab (first tab) - Card style + fast filters + bedrooms
+# Client: List tab (card style)
 # ---------------------------
 if not is_admin:
     with tab_list:
         st.subheader("فایل‌های موجود")
 
         min_p, max_p, min_a, max_a = fetch_minmax_cached()
-        # fallback if DB empty
         if max_p <= 0:
             max_p = 10000
         if max_a <= 0:
@@ -525,10 +549,8 @@ if not is_admin:
 
         with f1:
             quick_q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="cl_quick_q")
-
         with f2:
             deal_filter = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], index=0, key="cl_deal")
-
         with f3:
             sort_mode = st.selectbox(
                 "مرتب‌سازی",
@@ -536,11 +558,9 @@ if not is_admin:
                 index=0,
                 key="cl_sort",
             )
-
         with f4:
             page_size = st.selectbox("تعداد در هر صفحه", [12, 24, 36, 60], index=1, key="cl_page_size")
 
-        # fast sliders
         s1, s2 = st.columns(2)
         with s1:
             price_range = st.slider(
@@ -576,7 +596,6 @@ if not is_admin:
             where.append("deal_type = %s")
             params.append(deal_filter)
 
-        # sliders (only if price exists)
         where.append("(price_million is null OR (price_million >= %s AND price_million <= %s))")
         params.extend([float(price_range[0]), float(price_range[1])])
 
@@ -655,8 +674,7 @@ if not is_admin:
                     st.markdown("---")
                     st.markdown(f"### فایل {file_code}")
 
-                    line1_parts = [deal_type, ptype, f"منطقه {region}" if region else ""]
-                    line1 = " | ".join([x for x in line1_parts if x])
+                    line1 = " | ".join([x for x in [deal_type, ptype, f"منطقه {region}" if region else ""] if x])
                     if line1:
                         st.caption(line1)
 
@@ -665,7 +683,7 @@ if not is_admin:
                         if price_toman:
                             st.markdown(f"**قیمت:** {price_toman}")
                             if price_bil:
-                                st.caption(f"{price_bil}")
+                                st.caption(price_bil)
                         else:
                             st.markdown("**قیمت:** نامشخص")
 
@@ -679,7 +697,6 @@ if not is_admin:
                         preview = desc if len(desc) <= 90 else desc[:90] + "…"
                         st.write(preview)
 
-                    # "Copy code" helper
                     st.caption("کپی کد فایل:")
                     st.code(file_code, language=None)
 
@@ -700,7 +717,83 @@ if not is_admin:
 
 
 # ---------------------------
-# Admin: Upload / Update tab
+# Admin: List (table) + load to edit
+# ---------------------------
+if is_admin:
+    with tab_admin_list:
+        st.subheader("لیست فایل‌ها (مدیر)")
+
+        conn = get_conn_safe()
+
+        top1, top2, top3, top4 = st.columns([1.3, 1.0, 1.0, 1.0])
+        with top1:
+            al_q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="al_q")
+        with top2:
+            al_deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], index=0, key="al_deal")
+        with top3:
+            al_sort = st.selectbox("مرتب‌سازی", ["جدیدترین", "ارزان‌ترین", "گران‌ترین"], index=0, key="al_sort")
+        with top4:
+            al_limit = st.selectbox("تعداد نمایش", [50, 100, 200, 500], index=1, key="al_limit")
+
+        where = ["1=1"]
+        params = []
+
+        if al_q.strip():
+            q = f"%{al_q.strip()}%"
+            where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s)")
+            params.extend([q, q, q])
+
+        if al_deal != "همه":
+            where.append("deal_type = %s")
+            params.append(al_deal)
+
+        order_by = "updated_at desc nulls last"
+        if al_sort == "ارزان‌ترین":
+            order_by = "price_million asc nulls last, updated_at desc nulls last"
+        elif al_sort == "گران‌ترین":
+            order_by = "price_million desc nulls last, updated_at desc nulls last"
+
+        q = f"""
+        select
+          file_code as "کد فایل",
+          deal_type as "نوع معامله",
+          property_type as "نوع ملک",
+          region as "منطقه",
+          area_m2 as "متراژ",
+          bedrooms as "خواب",
+          price_million as "قیمت (میلیون)",
+          owner_name as "مالک",
+          owner_phone as "شماره مالک",
+          updated_at as "آپدیت"
+        from properties
+        where {" and ".join(where)}
+        order by {order_by}
+        limit %s
+        """
+        df = pd.read_sql_query(q, conn, params=tuple(params + [int(al_limit)]))
+
+        if df.empty:
+            st.info("فایلی پیدا نشد.")
+        else:
+            df["قیمت (تومان)"] = df["قیمت (میلیون)"].apply(toman_str_from_million)
+            df["قیمت (میلیارد)"] = df["قیمت (میلیون)"].apply(billion_str_from_million)
+            st.dataframe(df, use_container_width=True)
+
+            csv = df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("دانلود CSV لیست", csv, "admin_files.csv", "text/csv", key="al_dl")
+
+            st.divider()
+            st.subheader("ویرایش سریع")
+            codes = df["کد فایل"].astype(str).tolist()
+            sel_code = st.selectbox("انتخاب کد فایل برای ویرایش", codes, key="al_sel_code")
+
+            if st.button("باز کردن در تب ثبت/ویرایش", key="al_open_edit"):
+                st.session_state["edit_load_code"] = sel_code
+                st.success("انجام شد. برو به تب «ثبت/ویرایش ملک».")
+
+
+# ---------------------------
+# Admin: Upload / Update
 # ---------------------------
 if is_admin:
     with tab_upload:
@@ -733,14 +826,37 @@ if is_admin:
 
 
 # ---------------------------
-# Admin: Add / Edit tab (Properties)
+# Admin: Add / Edit (with duplicate code warning)
 # ---------------------------
 if is_admin:
     with tab_add:
         st.subheader("ثبت یا ویرایش ملک (فقط مدیر)")
-        st.caption("اگر کد فایل موجود باشد آپدیت می‌شود؛ اگر نباشد ثبت جدید انجام می‌شود.")
+        st.caption("اگر کد فایل موجود باشد، امکان آپدیت دارد. برای جلوگیری از اشتباه، اگر کد تکراری باشد باید تیک آپدیت را بزنید.")
+
+        conn = get_conn_safe()
+
+        # If admin clicked "open edit" from list tab, preload form fields
+        if "edit_load_code" in st.session_state and st.session_state["edit_load_code"]:
+            code_to_load = st.session_state["edit_load_code"]
+            row = fetch_property_by_code(conn, code_to_load)
+            if row:
+                st.session_state["adm_fc"] = normalize_text(row.get("file_code"))
+                st.session_state["adm_deal"] = normalize_text(row.get("deal_type")) or "خرید و فروش"
+                st.session_state["adm_region"] = normalize_text(row.get("region"))
+                st.session_state["adm_address"] = normalize_text(row.get("address"))
+                st.session_state["adm_area"] = float(row.get("area_m2") or 0.0)
+                st.session_state["adm_price"] = float(row.get("price_million") or 0.0)
+                st.session_state["adm_ptype"] = normalize_text(row.get("property_type"))
+                st.session_state["adm_bedrooms"] = int(row.get("bedrooms") or 0)
+                st.session_state["adm_desc"] = normalize_text(row.get("description"))
+                st.session_state["adm_owner"] = normalize_text(row.get("owner_name"))
+                st.session_state["adm_phone"] = normalize_text(row.get("owner_phone"))
+                st.session_state["adm_notes"] = normalize_text(row.get("internal_notes"))
+                st.session_state["adm_confirm_update"] = True  # چون داریم ویرایش می‌کنیم
+            st.session_state["edit_load_code"] = ""
 
         a, b, c = st.columns(3)
+
         with a:
             file_code = st.text_input("کد فایل (اجباری)", key="adm_fc")
             deal_type = st.selectbox("نوع معامله", ["خرید و فروش", "رهن و اجاره"], key="adm_deal")
@@ -761,39 +877,60 @@ if is_admin:
         description = st.text_area("توضیحات", key="adm_desc")
         internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)", key="adm_notes")
 
+        # Duplicate code protection
+        exists = False
+        if file_code and file_code.strip():
+            try:
+                exists = property_exists(conn, file_code.strip())
+            except Exception:
+                exists = False
+
+        if exists:
+            st.warning("⚠️ این کد فایل قبلاً وجود دارد. اگر ذخیره کنید، اطلاعات فایل قبلی آپدیت می‌شود.")
+            confirm_update = st.checkbox("می‌خواهم همین کد تکراری را آپدیت کنم", key="adm_confirm_update")
+        else:
+            # keep key stable
+            confirm_update = st.checkbox("می‌خواهم همین کد تکراری را آپدیت کنم", value=False, key="adm_confirm_update")
+
         s1, s2 = st.columns(2)
 
         if s1.button("ثبت / آپدیت", key="adm_save"):
-            if not file_code.strip():
+            fc = (file_code or "").strip()
+            if not fc:
                 st.error("کد فایل اجباری است.")
             else:
-                bd = int(bedrooms_val) if has_bedrooms(property_type) else None
-                row = {
-                    "file_code": file_code.strip(),
-                    "deal_type": deal_type,
-                    "region": region.strip(),
-                    "address": address.strip(),
-                    "area_m2": float(area_m2) if area_m2 else None,
-                    "price_million": float(price_million) if price_million else None,
-                    "property_type": property_type.strip(),
-                    "bedrooms": bd,
-                    "description": description.strip(),
-                    "owner_name": owner_name.strip(),
-                    "owner_phone": owner_phone.strip(),
-                    "internal_notes": internal_notes.strip(),
-                }
-                conn = get_conn_safe()
-                upsert_one_property(conn, row)
-                clear_caches()
-                st.success("ثبت/آپدیت انجام شد (دایمی).")
+                if exists and not confirm_update:
+                    st.error("برای جلوگیری از اشتباه، چون کد تکراری است باید تیک «آپدیت» را بزنید.")
+                else:
+                    bd = int(bedrooms_val) if has_bedrooms(property_type) else None
+
+                    row = {
+                        "file_code": fc,
+                        "deal_type": deal_type,
+                        "region": (region or "").strip(),
+                        "address": (address or "").strip(),
+                        "area_m2": float(area_m2) if area_m2 else None,
+                        "price_million": float(price_million) if price_million else None,
+                        "property_type": (property_type or "").strip(),
+                        "bedrooms": bd,
+                        "description": (description or "").strip(),
+                        "owner_name": (owner_name or "").strip(),
+                        "owner_phone": (owner_phone or "").strip(),
+                        "internal_notes": (internal_notes or "").strip(),
+                    }
+                    conn = get_conn_safe()
+                    upsert_one_property(conn, row)
+                    clear_caches()
+                    st.success("ثبت/آپدیت انجام شد (دایمی).")
 
         if s2.button("حذف این کد فایل", key="adm_del"):
-            if not file_code.strip():
+            fc = (file_code or "").strip()
+            if not fc:
                 st.error("کد فایل را وارد کنید.")
             else:
                 conn = get_conn_safe()
                 with conn.cursor() as cur:
-                    cur.execute("delete from properties where file_code = %s", (file_code.strip(),))
+                    cur.execute("delete from properties where file_code = %s", (fc,))
                 clear_caches()
                 st.success("حذف شد.")
 
@@ -807,7 +944,7 @@ if is_admin:
 
         conn = get_conn_safe()
         apps = pd.read_sql_query(
-            "select id, full_name, phone, deal_type, desired_property_type, region, budget_min_million, budget_max_million, bedrooms_min, updated_at "
+            "select id, full_name, phone, deal_type, desired_property_type, region, budget_min_million, budget_max_million, bedrooms_min, notes, updated_at "
             "from applicants order by updated_at desc nulls last, id desc",
             conn
         )
@@ -816,7 +953,6 @@ if is_admin:
 
         with left:
             st.markdown("### ثبت/ویرایش متقاضی")
-
             mode = st.radio("حالت", ["ثبت جدید", "ویرایش"], horizontal=True, key="app_mode")
 
             selected_id = None
@@ -874,7 +1010,7 @@ if is_admin:
                 )
 
             bedrooms_min = st.number_input("حداقل اتاق خواب (اختیاری)", min_value=0, value=int(prefill("bedrooms_min", 0) or 0), step=1, key="app_bedmin")
-            notes = st.text_area("توضیحات", value=str(prefill("notes", "")) if selected_row is None else "", key="app_notes")
+            notes = st.text_area("توضیحات", value=str(prefill("notes", "")), key="app_notes")
 
             if mode == "ثبت جدید":
                 if st.button("ثبت متقاضی", key="app_add_btn"):
@@ -915,7 +1051,8 @@ if is_admin:
             if apps.empty:
                 st.info("هنوز متقاضی ثبت نشده است.")
             else:
-                show_cols = ["id", "full_name", "phone", "deal_type", "desired_property_type", "region", "budget_min_million", "budget_max_million", "bedrooms_min", "updated_at"]
+                show_cols = ["id", "full_name", "phone", "deal_type", "desired_property_type", "region",
+                             "budget_min_million", "budget_max_million", "bedrooms_min", "updated_at"]
                 st.dataframe(apps[show_cols], use_container_width=True)
 
             st.divider()
@@ -1013,16 +1150,12 @@ with tab_search:
 
     with c1:
         deal = st.selectbox("نوع معامله", deal_opts, index=0, key="sr_deal")
-
     with c2:
         ptype = st.selectbox("نوع ملک", prop_opts, index=0, key="sr_ptype")
-
     with c3:
         region = st.selectbox("منطقه", region_opts, index=0, key="sr_region")
-
     with c4:
         file_code_q = st.text_input("کد فایل (اختیاری)", key="sr_code")
-
     with c5:
         min_bed = st.number_input("حداقل خواب (اختیاری)", min_value=0, value=0, step=1, key="sr_bed")
 
