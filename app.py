@@ -42,16 +42,13 @@ def get_conn():
         keepalives_interval=10,
         keepalives_count=3,
     )
-    # ✅ مهم: autocommit را از ابتدا روشن می‌کنیم تا set_session داخل transaction نیفتد
+    # مهم: autocommit از ابتدا روشن باشد
     conn.autocommit = True
     return conn
 
 
 def get_conn_safe():
-    """
-    Streamlit Cloud + pooler sometimes drops connections.
-    This wrapper pings and recreates the connection if needed.
-    """
+    """Ping + recreate on drop (pooler can drop idle conns)."""
     try:
         conn = get_conn()
         with conn.cursor() as cur:
@@ -67,7 +64,6 @@ def get_conn_safe():
 
 
 def ensure_tables_and_policies(conn):
-    # چون autocommit از قبل True است، دیگر وسط کار set_session نداریم
     with conn.cursor() as cur:
         cur.execute("""
         create table if not exists properties (
@@ -95,7 +91,7 @@ def ensure_tables_and_policies(conn):
         );
         """)
 
-        # RLS + policies (اگر قبلاً ساخته شده باشد خطا را نادیده می‌گیریم)
+        # RLS + policies (ignore if already enabled/exists)
         try:
             cur.execute("alter table properties enable row level security;")
         except Exception:
@@ -154,7 +150,6 @@ def parse_price_million(v) -> float | None:
     """
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
-
     if isinstance(v, (int, float)):
         return float(v)
 
@@ -193,7 +188,7 @@ def to_toman_from_million(x) -> str:
 
 
 # ---------------------------
-# Excel loader
+# Excel loader (Robust)
 # ---------------------------
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
@@ -205,75 +200,33 @@ def load_excel(file) -> pd.DataFrame:
     cols_norm = {c: norm(c) for c in cols}
     col_map = {}
 
-    for c in cols:
-        n = cols_norm[c]
-        if ("کد" in n) and ("فایل" in n or "ملک" in n):
-            col_map["file_code"] = c
-            break
-    if "file_code" not in col_map:
+    # helpers to set if found
+    def find_col(key, cond):
         for c in cols:
-            if "کد" in cols_norm[c]:
-                col_map["file_code"] = c
-                break
+            if cond(cols_norm[c]):
+                col_map[key] = c
+                return
 
-    for c in cols:
-        n = cols_norm[c]
-        if "نوعمعامله" in n or ("نوع" in n and "معامله" in n):
-            col_map["deal_type"] = c
-            break
+    # file_code
+    find_col("file_code", lambda n: ("کد" in n) and ("فایل" in n or "ملک" in n))
+    if "file_code" not in col_map:
+        find_col("file_code", lambda n: "کد" in n)
 
-    for c in cols:
-        if "منطقه" in cols_norm[c]:
-            col_map["region"] = c
-            break
+    # deal_type, region, address, area_m2, property_type
+    find_col("deal_type", lambda n: ("نوعمعامله" in n) or ("نوع" in n and "معامله" in n))
+    find_col("region", lambda n: "منطقه" in n)
+    find_col("address", lambda n: ("آدرس" in n) or ("ادرس" in n))
+    find_col("area_m2", lambda n: "متراژ" in n)
+    find_col("property_type", lambda n: ("نوعملک" in n) or ("نوع" in n and "ملک" in n))
 
-    for c in cols:
-        n = cols_norm[c]
-        if "آدرس" in n or "ادرس" in n:
-            col_map["address"] = c
-            break
+    # optional columns
+    find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
+    find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
+    find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
+    find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
 
-    for c in cols:
-        if "متراژ" in cols_norm[c]:
-            col_map["area_m2"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if "نوعملک" in n or ("نوع" in n and "ملک" in n):
-            col_map["property_type"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if "توضیحات" in n or "شرح" in n:
-            col_map["description"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if "مالک" in n and ("نام" in n or "اسم" in n):
-            col_map["owner_name"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if ("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n):
-            col_map["owner_phone"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if "یادداشت" in n or "داخلی" in n or "نکته" in n:
-            col_map["internal_notes"] = c
-            break
-
-    for c in cols:
-        n = cols_norm[c]
-        if ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)):
-            col_map["price_total"] = c
-            break
-
+    # PRICE total (prefer "قیمت کل")
+    find_col("price_total", lambda n: ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)))
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
         if len(price_like) == 1:
@@ -294,16 +247,17 @@ def load_excel(file) -> pd.DataFrame:
         "area_m2": pd.to_numeric(df[col_map["area_m2"]], errors="coerce"),
         "price_million": df[col_map["price_total"]].apply(parse_price_million),
         "property_type": df[col_map["property_type"]].astype(str).str.strip(),
-        "description": df "description" in col_map and df[col_map["description"]].astype(str).str.strip() or "",
-        "owner_name": "owner_name" in col_map and df[col_map["owner_name"]].astype(str).str.strip() or "",
-        "owner_phone": "owner_phone" in col_map and df[col_map["owner_phone"]].astype(str).str.strip() or "",
-        "internal_notes": "internal_notes" in col_map and df[col_map["internal_notes"]].astype(str).str.strip() or "",
+        "description": df[col_map["description"]].astype(str).str.strip() if "description" in col_map else "",
+        "owner_name": df[col_map["owner_name"]].astype(str).str.strip() if "owner_name" in col_map else "",
+        "owner_phone": df[col_map["owner_phone"]].astype(str).str.strip() if "owner_phone" in col_map else "",
+        "internal_notes": df[col_map["internal_notes"]].astype(str).str.strip() if "internal_notes" in col_map else "",
         "updated_at": now_utc_ts(),
     })
 
     out = out[out["file_code"].notna() & (out["file_code"] != "")].copy()
     for c in ["region", "address", "property_type", "description", "owner_name", "owner_phone", "internal_notes"]:
         out[c] = out[c].replace({"nan": ""})
+
     return out
 
 
@@ -348,7 +302,7 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
                 r["region"],
                 r["address"],
                 None if pd.isna(r["area_m2"]) else float(r["area_m2"]),
-                None if pd.isna(r["price_million"]) else float(r["price_million"]),
+                None if (r["price_million"] is None or (isinstance(r["price_million"], float) and pd.isna(r["price_million"]))) else float(r["price_million"]),
                 r["property_type"],
                 r["description"],
                 r["owner_name"],
