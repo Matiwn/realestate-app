@@ -23,7 +23,6 @@ CLIENT_PASSWORD = get_secret("CLIENT_PASSWORD", "1234")
 
 
 def now_utc_ts():
-    # psycopg2 can pass datetime objects; keep timestamp type in DB
     return datetime.utcnow()
 
 
@@ -35,14 +34,17 @@ def get_conn():
     if not DATABASE_URL:
         st.error("DATABASE_URL در Secrets تنظیم نشده است.")
         st.stop()
-    # keepalives can help stability on some networks
-    return psycopg2.connect(
+
+    conn = psycopg2.connect(
         DATABASE_URL,
         keepalives=1,
         keepalives_idle=30,
         keepalives_interval=10,
         keepalives_count=3,
     )
+    # ✅ مهم: autocommit را از ابتدا روشن می‌کنیم تا set_session داخل transaction نیفتد
+    conn.autocommit = True
+    return conn
 
 
 def get_conn_safe():
@@ -65,8 +67,7 @@ def get_conn_safe():
 
 
 def ensure_tables_and_policies(conn):
-    # Ensure tables exist
-    conn.autocommit = True
+    # چون autocommit از قبل True است، دیگر وسط کار set_session نداریم
     with conn.cursor() as cur:
         cur.execute("""
         create table if not exists properties (
@@ -94,7 +95,7 @@ def ensure_tables_and_policies(conn):
         );
         """)
 
-        # RLS + policies (safe-ish: ignore errors if already exists)
+        # RLS + policies (اگر قبلاً ساخته شده باشد خطا را نادیده می‌گیریم)
         try:
             cur.execute("alter table properties enable row level security;")
         except Exception:
@@ -192,7 +193,7 @@ def to_toman_from_million(x) -> str:
 
 
 # ---------------------------
-# Excel loader (Robust)
+# Excel loader
 # ---------------------------
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
@@ -204,7 +205,6 @@ def load_excel(file) -> pd.DataFrame:
     cols_norm = {c: norm(c) for c in cols}
     col_map = {}
 
-    # file_code
     for c in cols:
         n = cols_norm[c]
         if ("کد" in n) and ("فایل" in n or "ملک" in n):
@@ -216,73 +216,64 @@ def load_excel(file) -> pd.DataFrame:
                 col_map["file_code"] = c
                 break
 
-    # deal_type
     for c in cols:
         n = cols_norm[c]
         if "نوعمعامله" in n or ("نوع" in n and "معامله" in n):
             col_map["deal_type"] = c
             break
 
-    # region
     for c in cols:
         if "منطقه" in cols_norm[c]:
             col_map["region"] = c
             break
 
-    # address
     for c in cols:
         n = cols_norm[c]
         if "آدرس" in n or "ادرس" in n:
             col_map["address"] = c
             break
 
-    # area_m2
     for c in cols:
         if "متراژ" in cols_norm[c]:
             col_map["area_m2"] = c
             break
 
-    # property_type
     for c in cols:
         n = cols_norm[c]
         if "نوعملک" in n or ("نوع" in n and "ملک" in n):
             col_map["property_type"] = c
             break
 
-    # description (optional)
     for c in cols:
         n = cols_norm[c]
         if "توضیحات" in n or "شرح" in n:
             col_map["description"] = c
             break
 
-    # owner name/phone (optional)
     for c in cols:
         n = cols_norm[c]
         if "مالک" in n and ("نام" in n or "اسم" in n):
             col_map["owner_name"] = c
             break
+
     for c in cols:
         n = cols_norm[c]
         if ("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n):
             col_map["owner_phone"] = c
             break
 
-    # internal notes (optional)
     for c in cols:
         n = cols_norm[c]
         if "یادداشت" in n or "داخلی" in n or "نکته" in n:
             col_map["internal_notes"] = c
             break
 
-    # PRICE: prioritize total price
     for c in cols:
         n = cols_norm[c]
         if ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)):
             col_map["price_total"] = c
             break
 
-    # fallback if only one price-like column exists
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
         if len(price_like) == 1:
@@ -303,24 +294,23 @@ def load_excel(file) -> pd.DataFrame:
         "area_m2": pd.to_numeric(df[col_map["area_m2"]], errors="coerce"),
         "price_million": df[col_map["price_total"]].apply(parse_price_million),
         "property_type": df[col_map["property_type"]].astype(str).str.strip(),
-        "description": df[col_map["description"]].astype(str).str.strip() if "description" in col_map else "",
-        "owner_name": df[col_map["owner_name"]].astype(str).str.strip() if "owner_name" in col_map else "",
-        "owner_phone": df[col_map["owner_phone"]].astype(str).str.strip() if "owner_phone" in col_map else "",
-        "internal_notes": df[col_map["internal_notes"]].astype(str).str.strip() if "internal_notes" in col_map else "",
+        "description": df "description" in col_map and df[col_map["description"]].astype(str).str.strip() or "",
+        "owner_name": "owner_name" in col_map and df[col_map["owner_name"]].astype(str).str.strip() or "",
+        "owner_phone": "owner_phone" in col_map and df[col_map["owner_phone"]].astype(str).str.strip() or "",
+        "internal_notes": "internal_notes" in col_map and df[col_map["internal_notes"]].astype(str).str.strip() or "",
+        "updated_at": now_utc_ts(),
     })
 
     out = out[out["file_code"].notna() & (out["file_code"] != "")].copy()
     for c in ["region", "address", "property_type", "description", "owner_name", "owner_phone", "internal_notes"]:
         out[c] = out[c].replace({"nan": ""})
-
-    out["updated_at"] = now_utc_ts()
     return out
 
 
 # ---------------------------
 # Cached helpers (speed)
 # ---------------------------
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def fetch_distinct_cached(colname: str):
     conn = get_conn_safe()
     q = f"select distinct {colname} from properties where {colname} is not null and trim({colname})<>'' order by {colname}"
@@ -358,7 +348,7 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
                 r["region"],
                 r["address"],
                 None if pd.isna(r["area_m2"]) else float(r["area_m2"]),
-                None if (r["price_million"] is None or (isinstance(r["price_million"], float) and pd.isna(r["price_million"]))) else float(r["price_million"]),
+                None if pd.isna(r["price_million"]) else float(r["price_million"]),
                 r["property_type"],
                 r["description"],
                 r["owner_name"],
@@ -367,7 +357,6 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
                 now_utc_ts(),
             ))
             rows += 1
-    conn.commit()
     return rows
 
 
@@ -404,19 +393,17 @@ def upsert_one(conn, row: dict) -> None:
             row["internal_notes"],
             now_utc_ts(),
         ))
-    conn.commit()
 
 
 # ---------------------------
 # UI
 # ---------------------------
 st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
-st.title("سیستم جستجوی املاک (دایمی + سریع‌تر)")
+st.title("سیستم جستجوی املاک (دایمی + پایدارتر)")
 
 conn = get_conn_safe()
 ensure_tables_and_policies(conn)
 
-# --- Login / Role ---
 if "role" not in st.session_state:
     st.session_state.role = None
 
@@ -452,35 +439,29 @@ else:
     tab_search, tab_help = st.tabs(["جستجو", "راهنما"])
 
 
-# ---------------------------
-# Upload tab (ADMIN only)
-# ---------------------------
+# Upload (admin)
 if is_admin:
     with tab_upload:
         st.subheader("آپلود اکسل و بروزرسانی (فقط مدیر)")
-        st.caption("اکسل باید شیت Database داشته باشد. قیمت کل بر حسب میلیون است (مثلاً ۵ میلیارد = ۵۰۰۰).")
         up = st.file_uploader("آپلود Excel", type=["xlsx"])
 
         if up is not None:
             df = load_excel(up)
             st.write("پیش‌نمایش:", df.head(30))
 
-            if st.button("بروزرسانی دیتابیس (Merge/Upsert)"):
+            if st.button("بروزرسانی دیتابیس"):
                 conn = get_conn_safe()
                 n = upsert_properties(conn, df)
 
-                # log uploads
                 try:
                     with conn.cursor() as cur:
                         cur.execute(
                             "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
                             (now_utc_ts(), int(len(df)), int(n))
                         )
-                    conn.commit()
                 except Exception:
                     pass
 
-                # clear dropdown cache so new values appear quickly
                 try:
                     fetch_distinct_cached.clear()
                 except Exception:
@@ -488,46 +469,31 @@ if is_admin:
 
                 st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
 
-        st.divider()
-        st.subheader("آخرین آپلودها")
-        try:
-            conn = get_conn_safe()
-            logs = pd.read_sql_query(
-                "select uploaded_at, rows_read, rows_upserted from uploads order by id desc limit 20",
-                conn
-            )
-            st.dataframe(logs, use_container_width=True)
-        except Exception:
-            st.info("لاگ آپلودها فعلاً در دسترس نیست.")
 
-
-# ---------------------------
-# Add/Edit tab (ADMIN only)
-# ---------------------------
+# Add/Edit (admin)
 if is_admin:
     with tab_add:
         st.subheader("ثبت یا ویرایش ملک (فقط مدیر)")
-        st.caption("اگر کد فایل موجود باشد آپدیت می‌شود؛ اگر نباشد ثبت جدید انجام می‌شود.")
 
         c1, c2, c3 = st.columns(3)
 
         with c1:
             file_code = st.text_input("کد فایل (اجباری)")
             deal_type = st.selectbox("نوع معامله", ["خرید و فروش", "رهن و اجاره"])
-            property_type = st.text_input("نوع ملک", placeholder="مثلاً آپارتمان / دوبلکس / ...")
+            property_type = st.text_input("نوع ملک")
 
         with c2:
-            region = st.text_input("منطقه", placeholder="مثلاً 1 یا سعادت‌آباد")
+            region = st.text_input("منطقه")
             area_m2 = st.number_input("متراژ", min_value=0.0, value=0.0, step=1.0)
             price_million = st.number_input("قیمت کل (میلیون)", min_value=0.0, value=0.0, step=50.0)
 
         with c3:
-            owner_name = st.text_input("نام مالک (فقط مدیر)")
-            owner_phone = st.text_input("شماره تماس مالک (فقط مدیر)")
+            owner_name = st.text_input("نام مالک")
+            owner_phone = st.text_input("شماره تماس مالک")
 
         address = st.text_input("آدرس/لوکیشن")
         description = st.text_area("توضیحات")
-        internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)")
+        internal_notes = st.text_area("یادداشت داخلی")
 
         col_save, col_del = st.columns(2)
 
@@ -565,19 +531,14 @@ if is_admin:
                 conn = get_conn_safe()
                 with conn.cursor() as cur:
                     cur.execute("delete from properties where file_code = %s", (file_code.strip(),))
-                conn.commit()
-
                 try:
                     fetch_distinct_cached.clear()
                 except Exception:
                     pass
-
                 st.success("حذف شد.")
 
 
-# ---------------------------
-# Search tab (ADMIN + CLIENT)
-# ---------------------------
+# Search (all)
 with tab_search:
     st.subheader("جستجو")
 
@@ -608,9 +569,7 @@ with tab_search:
         min_price = st.number_input("قیمت از (میلیون)", min_value=0.0, value=0.0, step=50.0)
         max_price = st.number_input("قیمت تا (میلیون) (0 یعنی محدودیت ندارد)", min_value=0.0, value=0.0, step=50.0)
 
-    run = st.button("جستجو")
-
-    if run:
+    if st.button("جستجو"):
         params = []
         where = ["1=1"]
 
@@ -679,9 +638,6 @@ with tab_search:
             st.download_button("دانلود CSV نتایج", csv, "results.csv", "text/csv")
 
 
-# ---------------------------
-# Help tab (CLIENT only)
-# ---------------------------
 if not is_admin:
     with tab_help:
         st.subheader("راهنما")
