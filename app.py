@@ -6,55 +6,60 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-
-# ✅ MUST be the first Streamlit command
+# ✅ MUST be the first Streamlit command and only once
 st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
 
 
 # ---------------------------
-# Config from Environment (Railway Variables)
+# Config (Railway Variables / Env Vars)
 # ---------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@123")
 CLIENT_PASSWORD = os.environ.get("CLIENT_PASSWORD", "1234")
 
 
-def now_utc_ts():
+def now_utc_ts() -> datetime:
     return datetime.utcnow()
 
 
 # ---------------------------
-# DB helpers (Supabase/Postgres)
+# DB connection (Supabase Postgres via Pooler)
 # ---------------------------
 @st.cache_resource
-def get_conn():
+def _make_conn():
     if not DATABASE_URL:
-        st.error("DATABASE_URL تنظیم نشده. در Railway → Variables مقدار DATABASE_URL را وارد کن.")
+        st.error("DATABASE_URL تنظیم نشده. در Railway → Variables مقدار DATABASE_URL را وارد کنید.")
         st.stop()
 
     conn = psycopg2.connect(
         DATABASE_URL,
+        connect_timeout=10,
         keepalives=1,
         keepalives_idle=30,
         keepalives_interval=10,
         keepalives_count=3,
     )
+    # Important: avoid set_session errors and keep things simple
     conn.autocommit = True
     return conn
 
 
 def get_conn_safe():
+    """
+    Pooler/Network might drop idle connections.
+    This function pings and recreates if needed.
+    """
     try:
-        conn = get_conn()
+        conn = _make_conn()
         with conn.cursor() as cur:
             cur.execute("select 1;")
         return conn
     except Exception:
         try:
-            get_conn.clear()
+            _make_conn.clear()
         except Exception:
             pass
-        conn = get_conn()
+        conn = _make_conn()
         return conn
 
 
@@ -76,6 +81,7 @@ def ensure_tables(conn):
           updated_at timestamp
         );
         """)
+
         cur.execute("""
         create table if not exists uploads (
           id bigserial primary key,
@@ -87,7 +93,7 @@ def ensure_tables(conn):
 
 
 # ---------------------------
-# Parsers
+# Helpers
 # ---------------------------
 def normalize_deal_type(x) -> str:
     if x is None:
@@ -101,6 +107,10 @@ def normalize_deal_type(x) -> str:
 
 
 def parse_price_million(v) -> float | None:
+    """
+    DB unit: million
+    Example: 5 میلیارد -> 5000
+    """
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
     if isinstance(v, (int, float)):
@@ -130,7 +140,7 @@ def parse_price_million(v) -> float | None:
     return None
 
 
-def to_toman_from_million(x) -> str:
+def toman_str_from_million(x) -> str:
     if x is None or (isinstance(x, float) and pd.isna(x)):
         return ""
     try:
@@ -141,7 +151,7 @@ def to_toman_from_million(x) -> str:
 
 
 # ---------------------------
-# Excel loader
+# Excel loader (sheet: Database)
 # ---------------------------
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
@@ -159,6 +169,7 @@ def load_excel(file) -> pd.DataFrame:
                 col_map[key] = c
                 return
 
+    # required columns
     find_col("file_code", lambda n: ("کد" in n) and ("فایل" in n or "ملک" in n))
     if "file_code" not in col_map:
         find_col("file_code", lambda n: "کد" in n)
@@ -169,11 +180,13 @@ def load_excel(file) -> pd.DataFrame:
     find_col("area_m2", lambda n: "متراژ" in n)
     find_col("property_type", lambda n: ("نوعملک" in n) or ("نوع" in n and "ملک" in n))
 
+    # optional columns
     find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
     find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
     find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
     find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
 
+    # price total (prefer "قیمت کل")
     find_col("price_total", lambda n: ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)))
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
@@ -210,7 +223,7 @@ def load_excel(file) -> pd.DataFrame:
 
 
 # ---------------------------
-# Cached helpers (speed)
+# Cached dropdown data (speed)
 # ---------------------------
 @st.cache_data(ttl=180)
 def fetch_distinct_cached(colname: str):
@@ -220,8 +233,15 @@ def fetch_distinct_cached(colname: str):
     return df[colname].tolist()
 
 
+def clear_caches():
+    try:
+        fetch_distinct_cached.clear()
+    except Exception:
+        pass
+
+
 # ---------------------------
-# Upsert
+# DB Writes
 # ---------------------------
 def upsert_properties(conn, df: pd.DataFrame) -> int:
     rows = 0
@@ -262,7 +282,18 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
     return rows
 
 
-def upsert_one(conn, row: dict) -> None:
+def insert_upload_log(conn, rows_read: int, rows_upserted: int):
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
+                (now_utc_ts(), int(rows_read), int(rows_upserted))
+            )
+    except Exception:
+        pass
+
+
+def upsert_one(conn, row: dict):
     with conn.cursor() as cur:
         cur.execute("""
         insert into properties
@@ -298,14 +329,14 @@ def upsert_one(conn, row: dict) -> None:
 
 
 # ---------------------------
-# App start
+# App UI
 # ---------------------------
 st.title("سیستم جستجوی املاک")
 
 conn = get_conn_safe()
 ensure_tables(conn)
 
-# --- Login ---
+# Session state for role
 if "role" not in st.session_state:
     st.session_state.role = None
 
@@ -313,9 +344,9 @@ with st.sidebar:
     st.header("ورود")
     role_ui = st.selectbox("نقش", ["مشتری", "مدیر"], index=0)
     pwd = st.text_input("رمز", type="password")
-    col_a, col_b = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    if col_a.button("ورود"):
+    if c1.button("ورود"):
         if role_ui == "مدیر" and pwd == ADMIN_PASSWORD:
             st.session_state.role = "admin"
             st.success("ورود مدیر موفق بود.")
@@ -325,7 +356,7 @@ with st.sidebar:
         else:
             st.error("رمز اشتباه است.")
 
-    if col_b.button("خروج"):
+    if c2.button("خروج"):
         st.session_state.role = None
         st.info("خارج شدید.")
 
@@ -333,7 +364,7 @@ if st.session_state.role is None:
     st.warning("برای استفاده از برنامه، از نوار کناری وارد شوید.")
     st.stop()
 
-is_admin = (st.session_state.role == "admin")
+is_admin = st.session_state.role == "admin"
 
 if is_admin:
     tab_upload, tab_search, tab_add = st.tabs(["آپلود/آپدیت", "جستجو", "ثبت/ویرایش ملک"])
@@ -341,62 +372,57 @@ else:
     tab_search, tab_help = st.tabs(["جستجو", "راهنما"])
 
 
-# Upload (admin)
+# ---------------------------
+# Upload / Update (Admin)
+# ---------------------------
 if is_admin:
     with tab_upload:
         st.subheader("آپلود اکسل و بروزرسانی (فقط مدیر)")
+        st.caption("اکسل باید شیت Database داشته باشد. قیمت کل بر حسب میلیون است (مثلاً ۵ میلیارد = ۵۰۰۰).")
+
         up = st.file_uploader("آپلود Excel", type=["xlsx"])
         if up is not None:
             df = load_excel(up)
             st.write("پیش‌نمایش:", df.head(30))
-            if st.button("بروزرسانی دیتابیس"):
+
+            if st.button("بروزرسانی دیتابیس (Merge/Upsert)"):
                 conn = get_conn_safe()
                 n = upsert_properties(conn, df)
-
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
-                            (now_utc_ts(), int(len(df)), int(n))
-                        )
-                except Exception:
-                    pass
-
-                try:
-                    fetch_distinct_cached.clear()
-                except Exception:
-                    pass
-
+                insert_upload_log(conn, rows_read=len(df), rows_upserted=n)
+                clear_caches()
                 st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
 
 
-# Add/Edit (admin)
+# ---------------------------
+# Add / Edit (Admin)
+# ---------------------------
 if is_admin:
     with tab_add:
         st.subheader("ثبت یا ویرایش ملک (فقط مدیر)")
+        st.caption("اگر کد فایل موجود باشد آپدیت می‌شود؛ اگر نباشد ثبت جدید انجام می‌شود.")
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
+        a, b, c = st.columns(3)
+        with a:
             file_code = st.text_input("کد فایل (اجباری)")
             deal_type = st.selectbox("نوع معامله", ["خرید و فروش", "رهن و اجاره"])
-            property_type = st.text_input("نوع ملک")
+            property_type = st.text_input("نوع ملک", placeholder="مثلاً آپارتمان / دوبلکس / ...")
 
-        with c2:
-            region = st.text_input("منطقه")
+        with b:
+            region = st.text_input("منطقه", placeholder="مثلاً 1 یا سعادت‌آباد")
             area_m2 = st.number_input("متراژ", min_value=0.0, value=0.0, step=1.0)
             price_million = st.number_input("قیمت کل (میلیون)", min_value=0.0, value=0.0, step=50.0)
 
-        with c3:
-            owner_name = st.text_input("نام مالک")
-            owner_phone = st.text_input("شماره تماس مالک")
+        with c:
+            owner_name = st.text_input("نام مالک (فقط مدیر)")
+            owner_phone = st.text_input("شماره تماس مالک (فقط مدیر)")
 
         address = st.text_input("آدرس/لوکیشن")
         description = st.text_area("توضیحات")
-        internal_notes = st.text_area("یادداشت داخلی")
+        internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)")
 
-        col_save, col_del = st.columns(2)
+        s1, s2 = st.columns(2)
 
-        if col_save.button("ثبت / آپدیت"):
+        if s1.button("ثبت / آپدیت"):
             if not file_code.strip():
                 st.error("کد فایل اجباری است.")
             else:
@@ -415,33 +441,28 @@ if is_admin:
                 }
                 conn = get_conn_safe()
                 upsert_one(conn, row)
-
-                try:
-                    fetch_distinct_cached.clear()
-                except Exception:
-                    pass
-
+                clear_caches()
                 st.success("ثبت/آپدیت انجام شد (دایمی).")
 
-        if col_del.button("حذف این کد فایل"):
+        if s2.button("حذف این کد فایل"):
             if not file_code.strip():
                 st.error("کد فایل را وارد کنید.")
             else:
                 conn = get_conn_safe()
                 with conn.cursor() as cur:
                     cur.execute("delete from properties where file_code = %s", (file_code.strip(),))
-                try:
-                    fetch_distinct_cached.clear()
-                except Exception:
-                    pass
+                clear_caches()
                 st.success("حذف شد.")
 
 
-# Search (all)
+# ---------------------------
+# Search (Admin + Client)
+# ---------------------------
 with tab_search:
     st.subheader("جستجو")
 
     deal_opts = ["", "خرید و فروش", "رهن و اجاره"]
+
     try:
         prop_opts = [""] + fetch_distinct_cached("property_type")
         region_opts = [""] + fetch_distinct_cached("region")
@@ -450,6 +471,7 @@ with tab_search:
         region_opts = [""]
 
     c1, c2, c3, c4 = st.columns(4)
+
     with c1:
         deal = st.selectbox("نوع معامله", deal_opts, index=0)
         ptype = st.selectbox("نوع ملک", prop_opts, index=0)
@@ -473,24 +495,31 @@ with tab_search:
         if file_code_q.strip():
             where.append("file_code ILIKE %s")
             params.append(f"%{file_code_q.strip()}%")
+
         if deal:
             where.append("deal_type = %s")
             params.append(deal)
+
         if ptype:
             where.append("property_type = %s")
             params.append(ptype)
+
         if region:
             where.append("region = %s")
             params.append(region)
+
         if min_area > 0:
             where.append("area_m2 >= %s")
             params.append(float(min_area))
+
         if max_area > 0:
             where.append("area_m2 <= %s")
             params.append(float(max_area))
+
         if min_price > 0:
             where.append("price_million >= %s")
             params.append(float(min_price))
+
         if max_price > 0:
             where.append("price_million <= %s")
             params.append(float(max_price))
@@ -519,8 +548,9 @@ with tab_search:
         if res.empty:
             st.warning("هیچ نتیجه‌ای پیدا نشد.")
         else:
-            res["قیمت (تومان)"] = res["price_million"].apply(to_toman_from_million)
+            res["قیمت (تومان)"] = res["price_million"].apply(toman_str_from_million)
             res = res.drop(columns=["price_million"])
+
             st.write(f"تعداد نتایج: {len(res)}")
             st.dataframe(res, use_container_width=True)
 
@@ -528,6 +558,9 @@ with tab_search:
             st.download_button("دانلود CSV نتایج", csv, "results.csv", "text/csv")
 
 
+# ---------------------------
+# Help (Client)
+# ---------------------------
 if not is_admin:
     with tab_help:
         st.subheader("راهنما")
