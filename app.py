@@ -22,8 +22,9 @@ ADMIN_PASSWORD = get_secret("ADMIN_PASSWORD", "Admin@123")
 CLIENT_PASSWORD = get_secret("CLIENT_PASSWORD", "1234")
 
 
-def now_utc():
-    return datetime.utcnow().isoformat(timespec="seconds")
+def now_utc_ts():
+    # psycopg2 can pass datetime objects; keep timestamp type in DB
+    return datetime.utcnow()
 
 
 # ---------------------------
@@ -34,11 +35,37 @@ def get_conn():
     if not DATABASE_URL:
         st.error("DATABASE_URL در Secrets تنظیم نشده است.")
         st.stop()
-    return psycopg2.connect(DATABASE_URL)
+    # keepalives can help stability on some networks
+    return psycopg2.connect(
+        DATABASE_URL,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+    )
 
 
-def ensure_tables_and_columns(conn):
-    # properties
+def get_conn_safe():
+    """
+    Streamlit Cloud + pooler sometimes drops connections.
+    This wrapper pings and recreates the connection if needed.
+    """
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("select 1;")
+        return conn
+    except Exception:
+        try:
+            get_conn.clear()
+        except Exception:
+            pass
+        conn = get_conn()
+        return conn
+
+
+def ensure_tables_and_policies(conn):
+    # Ensure tables exist
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute("""
@@ -58,7 +85,6 @@ def ensure_tables_and_columns(conn):
         );
         """)
 
-        # uploads (optional but useful)
         cur.execute("""
         create table if not exists uploads (
           id bigserial primary key,
@@ -68,30 +94,42 @@ def ensure_tables_and_columns(conn):
         );
         """)
 
-        # RLS + policies (idempotent-ish)
-        cur.execute("alter table properties enable row level security;")
-        cur.execute("""
-        do $$
-        begin
-          if not exists (select 1 from pg_policies where schemaname='public' and tablename='properties') then
-            create policy "Enable all access"
-            on properties for all
-            using (true) with check (true);
-          end if;
-        end $$;
-        """)
+        # RLS + policies (safe-ish: ignore errors if already exists)
+        try:
+            cur.execute("alter table properties enable row level security;")
+        except Exception:
+            pass
+        try:
+            cur.execute("""
+            do $$
+            begin
+              if not exists (select 1 from pg_policies where schemaname='public' and tablename='properties') then
+                create policy "Enable all access"
+                on properties for all
+                using (true) with check (true);
+              end if;
+            end $$;
+            """)
+        except Exception:
+            pass
 
-        cur.execute("alter table uploads enable row level security;")
-        cur.execute("""
-        do $$
-        begin
-          if not exists (select 1 from pg_policies where schemaname='public' and tablename='uploads') then
-            create policy "Enable all access uploads"
-            on uploads for all
-            using (true) with check (true);
-          end if;
-        end $$;
-        """)
+        try:
+            cur.execute("alter table uploads enable row level security;")
+        except Exception:
+            pass
+        try:
+            cur.execute("""
+            do $$
+            begin
+              if not exists (select 1 from pg_policies where schemaname='public' and tablename='uploads') then
+                create policy "Enable all access uploads"
+                on uploads for all
+                using (true) with check (true);
+              end if;
+            end $$;
+            """)
+        except Exception:
+            pass
 
 
 # ---------------------------
@@ -275,8 +313,19 @@ def load_excel(file) -> pd.DataFrame:
     for c in ["region", "address", "property_type", "description", "owner_name", "owner_phone", "internal_notes"]:
         out[c] = out[c].replace({"nan": ""})
 
-    out["updated_at"] = now_utc()
+    out["updated_at"] = now_utc_ts()
     return out
+
+
+# ---------------------------
+# Cached helpers (speed)
+# ---------------------------
+@st.cache_data(ttl=60)
+def fetch_distinct_cached(colname: str):
+    conn = get_conn_safe()
+    q = f"select distinct {colname} from properties where {colname} is not null and trim({colname})<>'' order by {colname}"
+    df = pd.read_sql_query(q, conn)
+    return df[colname].tolist()
 
 
 # ---------------------------
@@ -315,7 +364,7 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
                 r["owner_name"],
                 r["owner_phone"],
                 r["internal_notes"],
-                datetime.utcnow(),  # timestamp
+                now_utc_ts(),
             ))
             rows += 1
     conn.commit()
@@ -353,24 +402,19 @@ def upsert_one(conn, row: dict) -> None:
             row["owner_name"],
             row["owner_phone"],
             row["internal_notes"],
-            datetime.utcnow(),  # timestamp
+            now_utc_ts(),
         ))
     conn.commit()
-
-
-def fetch_distinct(conn, colname: str):
-    q = f"select distinct {colname} from properties where {colname} is not null and trim({colname})<>'' order by {colname}"
-    return [r[0] for r in pd.read_sql_query(q, conn).itertuples(index=False)]
 
 
 # ---------------------------
 # UI
 # ---------------------------
 st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
-st.title("سیستم جستجوی املاک (دایمی با Supabase)")
+st.title("سیستم جستجوی املاک (دایمی + سریع‌تر)")
 
-conn = get_conn()
-ensure_tables_and_columns(conn)
+conn = get_conn_safe()
+ensure_tables_and_policies(conn)
 
 # --- Login / Role ---
 if "role" not in st.session_state:
@@ -402,7 +446,6 @@ if st.session_state.role is None:
 
 is_admin = (st.session_state.role == "admin")
 
-# Tabs based on role
 if is_admin:
     tab_upload, tab_search, tab_add = st.tabs(["آپلود/آپدیت", "جستجو", "ثبت/ویرایش ملک"])
 else:
@@ -423,28 +466,39 @@ if is_admin:
             st.write("پیش‌نمایش:", df.head(30))
 
             if st.button("بروزرسانی دیتابیس (Merge/Upsert)"):
+                conn = get_conn_safe()
                 n = upsert_properties(conn, df)
 
                 # log uploads
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
-                        (datetime.utcnow(), int(len(df)), int(n))
-                    )
-                conn.commit()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
+                            (now_utc_ts(), int(len(df)), int(n))
+                        )
+                    conn.commit()
+                except Exception:
+                    pass
+
+                # clear dropdown cache so new values appear quickly
+                try:
+                    fetch_distinct_cached.clear()
+                except Exception:
+                    pass
 
                 st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
 
         st.divider()
         st.subheader("آخرین آپلودها")
         try:
+            conn = get_conn_safe()
             logs = pd.read_sql_query(
                 "select uploaded_at, rows_read, rows_upserted from uploads order by id desc limit 20",
                 conn
             )
             st.dataframe(logs, use_container_width=True)
         except Exception:
-            st.info("لاگ آپلودها هنوز موجود نیست یا دسترسی تنظیم نشده است.")
+            st.info("لاگ آپلودها فعلاً در دسترس نیست.")
 
 
 # ---------------------------
@@ -493,18 +547,31 @@ if is_admin:
                     "owner_name": owner_name.strip(),
                     "owner_phone": owner_phone.strip(),
                     "internal_notes": internal_notes.strip(),
-                    "updated_at": now_utc(),
                 }
+                conn = get_conn_safe()
                 upsert_one(conn, row)
-                st.success("ثبت/آپدیت انجام شد (دایمی در Supabase).")
+
+                try:
+                    fetch_distinct_cached.clear()
+                except Exception:
+                    pass
+
+                st.success("ثبت/آپدیت انجام شد (دایمی).")
 
         if col_del.button("حذف این کد فایل"):
             if not file_code.strip():
                 st.error("کد فایل را وارد کنید.")
             else:
+                conn = get_conn_safe()
                 with conn.cursor() as cur:
                     cur.execute("delete from properties where file_code = %s", (file_code.strip(),))
                 conn.commit()
+
+                try:
+                    fetch_distinct_cached.clear()
+                except Exception:
+                    pass
+
                 st.success("حذف شد.")
 
 
@@ -516,10 +583,9 @@ with tab_search:
 
     deal_opts = ["", "خرید و فروش", "رهن و اجاره"]
 
-    # Distinct options (from DB)
     try:
-        prop_opts = [""] + fetch_distinct(conn, "property_type")
-        region_opts = [""] + fetch_distinct(conn, "region")
+        prop_opts = [""] + fetch_distinct_cached("property_type")
+        region_opts = [""] + fetch_distinct_cached("region")
     except Exception:
         prop_opts = [""]
         region_opts = [""]
@@ -545,7 +611,6 @@ with tab_search:
     run = st.button("جستجو")
 
     if run:
-        # Build dynamic WHERE with %s params
         params = []
         where = ["1=1"]
 
@@ -599,6 +664,7 @@ with tab_search:
           order by price_million asc nulls last, updated_at desc nulls last
         """
 
+        conn = get_conn_safe()
         res = pd.read_sql_query(query, conn, params=tuple(params))
 
         if res.empty:
