@@ -1,18 +1,10 @@
 import os
 import re
-import sqlite3
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
-
-
-# ---------------------------
-# Config (Local + Render)
-# ---------------------------
-DATA_DIR = os.environ.get("DATA_DIR", "data")
-os.makedirs(DATA_DIR, exist_ok=True)
-DB_PATH = os.path.join(DATA_DIR, "realestate.db")
+import psycopg2
 
 
 # ---------------------------
@@ -24,60 +16,82 @@ def get_secret(name: str, default: str = "") -> str:
     except Exception:
         return os.environ.get(name, default)
 
+
+DATABASE_URL = get_secret("DATABASE_URL", "")
 ADMIN_PASSWORD = get_secret("ADMIN_PASSWORD", "Admin@123")
 CLIENT_PASSWORD = get_secret("CLIENT_PASSWORD", "1234")
 
 
+def now_utc():
+    return datetime.utcnow().isoformat(timespec="seconds")
+
+
 # ---------------------------
-# DB helpers
+# DB helpers (Supabase/Postgres)
 # ---------------------------
+@st.cache_resource
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    return conn
+    if not DATABASE_URL:
+        st.error("DATABASE_URL در Secrets تنظیم نشده است.")
+        st.stop()
+    return psycopg2.connect(DATABASE_URL)
 
 
-def ensure_tables_and_columns(conn: sqlite3.Connection):
-    # Create table (new installs)
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS properties (
-        file_code TEXT PRIMARY KEY,
-        deal_type TEXT,
-        region TEXT,
-        address TEXT,
-        area_m2 REAL,
-        price_million REAL,
-        property_type TEXT,
-        description TEXT,
-        owner_name TEXT,
-        owner_phone TEXT,
-        internal_notes TEXT,
-        updated_at TEXT
-    );
-    """)
+def ensure_tables_and_columns(conn):
+    # properties
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("""
+        create table if not exists properties (
+          file_code text primary key,
+          deal_type text,
+          region text,
+          address text,
+          area_m2 numeric,
+          price_million numeric,
+          property_type text,
+          description text,
+          owner_name text,
+          owner_phone text,
+          internal_notes text,
+          updated_at timestamp
+        );
+        """)
 
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS uploads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uploaded_at TEXT,
-        rows_read INTEGER,
-        rows_upserted INTEGER
-    );
-    """)
-    conn.commit()
+        # uploads (optional but useful)
+        cur.execute("""
+        create table if not exists uploads (
+          id bigserial primary key,
+          uploaded_at timestamp,
+          rows_read integer,
+          rows_upserted integer
+        );
+        """)
 
-    # Ensure columns exist (upgrade old DBs safely)
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(properties);").fetchall()]
-    def add_col(name: str, coltype: str):
-        if name not in cols:
-            conn.execute(f"ALTER TABLE properties ADD COLUMN {name} {coltype};")
+        # RLS + policies (idempotent-ish)
+        cur.execute("alter table properties enable row level security;")
+        cur.execute("""
+        do $$
+        begin
+          if not exists (select 1 from pg_policies where schemaname='public' and tablename='properties') then
+            create policy "Enable all access"
+            on properties for all
+            using (true) with check (true);
+          end if;
+        end $$;
+        """)
 
-    add_col("description", "TEXT")
-    add_col("owner_name", "TEXT")
-    add_col("owner_phone", "TEXT")
-    add_col("internal_notes", "TEXT")
-    add_col("updated_at", "TEXT")
-    conn.commit()
+        cur.execute("alter table uploads enable row level security;")
+        cur.execute("""
+        do $$
+        begin
+          if not exists (select 1 from pg_policies where schemaname='public' and tablename='uploads') then
+            create policy "Enable all access uploads"
+            on uploads for all
+            using (true) with check (true);
+          end if;
+        end $$;
+        """)
 
 
 # ---------------------------
@@ -137,10 +151,6 @@ def to_toman_from_million(x) -> str:
         return f"{toman:,} تومان"
     except Exception:
         return ""
-
-
-def now_utc():
-    return datetime.utcnow().isoformat(timespec="seconds")
 
 
 # ---------------------------
@@ -234,13 +244,6 @@ def load_excel(file) -> pd.DataFrame:
             col_map["price_total"] = c
             break
 
-    # price per m2 (optional, not used)
-    for c in cols:
-        n = cols_norm[c]
-        if ("قیمتهرمتر" in n) or (("قیمت" in n) and ("هرمتر" in n or "متر" in n)):
-            col_map["price_per_m2"] = c
-            break
-
     # fallback if only one price-like column exists
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
@@ -277,19 +280,56 @@ def load_excel(file) -> pd.DataFrame:
 
 
 # ---------------------------
-# Upsert
+# Upsert helpers
 # ---------------------------
-def upsert_properties(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
-    cur = conn.cursor()
+def upsert_properties(conn, df: pd.DataFrame) -> int:
     rows = 0
+    with conn.cursor() as cur:
+        for _, r in df.iterrows():
+            cur.execute("""
+            insert into properties
+              (file_code, deal_type, region, address, area_m2, price_million, property_type, description,
+               owner_name, owner_phone, internal_notes, updated_at)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            on conflict (file_code) do update set
+              deal_type=excluded.deal_type,
+              region=excluded.region,
+              address=excluded.address,
+              area_m2=excluded.area_m2,
+              price_million=excluded.price_million,
+              property_type=excluded.property_type,
+              description=excluded.description,
+              owner_name=excluded.owner_name,
+              owner_phone=excluded.owner_phone,
+              internal_notes=excluded.internal_notes,
+              updated_at=excluded.updated_at
+            """, (
+                str(r["file_code"]).strip(),
+                r["deal_type"],
+                r["region"],
+                r["address"],
+                None if pd.isna(r["area_m2"]) else float(r["area_m2"]),
+                None if (r["price_million"] is None or (isinstance(r["price_million"], float) and pd.isna(r["price_million"]))) else float(r["price_million"]),
+                r["property_type"],
+                r["description"],
+                r["owner_name"],
+                r["owner_phone"],
+                r["internal_notes"],
+                datetime.utcnow(),  # timestamp
+            ))
+            rows += 1
+    conn.commit()
+    return rows
 
-    for _, r in df.iterrows():
+
+def upsert_one(conn, row: dict) -> None:
+    with conn.cursor() as cur:
         cur.execute("""
-        INSERT INTO properties
+        insert into properties
           (file_code, deal_type, region, address, area_m2, price_million, property_type, description,
            owner_name, owner_phone, internal_notes, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(file_code) DO UPDATE SET
+        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        on conflict (file_code) do update set
           deal_type=excluded.deal_type,
           region=excluded.region,
           address=excluded.address,
@@ -302,65 +342,32 @@ def upsert_properties(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
           internal_notes=excluded.internal_notes,
           updated_at=excluded.updated_at
         """, (
-            str(r["file_code"]).strip(),
-            r["deal_type"],
-            r["region"],
-            r["address"],
-            None if pd.isna(r["area_m2"]) else float(r["area_m2"]),
-            None if (r["price_million"] is None or (isinstance(r["price_million"], float) and pd.isna(r["price_million"]))) else float(r["price_million"]),
-            r["property_type"],
-            r["description"],
-            r["owner_name"],
-            r["owner_phone"],
-            r["internal_notes"],
-            r["updated_at"],
+            row["file_code"],
+            row["deal_type"],
+            row["region"],
+            row["address"],
+            row["area_m2"],
+            row["price_million"],
+            row["property_type"],
+            row["description"],
+            row["owner_name"],
+            row["owner_phone"],
+            row["internal_notes"],
+            datetime.utcnow(),  # timestamp
         ))
-        rows += 1
-
     conn.commit()
-    return rows
 
 
-def upsert_one(conn: sqlite3.Connection, row: dict) -> None:
-    conn.execute("""
-    INSERT INTO properties
-      (file_code, deal_type, region, address, area_m2, price_million, property_type, description,
-       owner_name, owner_phone, internal_notes, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(file_code) DO UPDATE SET
-      deal_type=excluded.deal_type,
-      region=excluded.region,
-      address=excluded.address,
-      area_m2=excluded.area_m2,
-      price_million=excluded.price_million,
-      property_type=excluded.property_type,
-      description=excluded.description,
-      owner_name=excluded.owner_name,
-      owner_phone=excluded.owner_phone,
-      internal_notes=excluded.internal_notes,
-      updated_at=excluded.updated_at
-    """, (
-        row["file_code"],
-        row["deal_type"],
-        row["region"],
-        row["address"],
-        row["area_m2"],
-        row["price_million"],
-        row["property_type"],
-        row["description"],
-        row["owner_name"],
-        row["owner_phone"],
-        row["internal_notes"],
-        row["updated_at"],
-    ))
-    conn.commit()
+def fetch_distinct(conn, colname: str):
+    q = f"select distinct {colname} from properties where {colname} is not null and trim({colname})<>'' order by {colname}"
+    return [r[0] for r in pd.read_sql_query(q, conn).itertuples(index=False)]
 
 
 # ---------------------------
 # UI
 # ---------------------------
 st.set_page_config(page_title="سیستم جستجوی املاک", layout="wide")
-st.title("سیستم جستجوی املاک (مدیر / مشتری)")
+st.title("سیستم جستجوی املاک (دایمی با Supabase)")
 
 conn = get_conn()
 ensure_tables_and_columns(conn)
@@ -407,8 +414,8 @@ else:
 # ---------------------------
 if is_admin:
     with tab_upload:
-        st.subheader("آپلود اکسل و بروزرسانی دیتابیس (فقط مدیر)")
-        st.caption("اکسل باید شیت Database داشته باشد. قیمت کل برحسب میلیون است (مثلاً ۵ میلیارد = ۵۰۰۰).")
+        st.subheader("آپلود اکسل و بروزرسانی (فقط مدیر)")
+        st.caption("اکسل باید شیت Database داشته باشد. قیمت کل بر حسب میلیون است (مثلاً ۵ میلیارد = ۵۰۰۰).")
         up = st.file_uploader("آپلود Excel", type=["xlsx"])
 
         if up is not None:
@@ -417,20 +424,27 @@ if is_admin:
 
             if st.button("بروزرسانی دیتابیس (Merge/Upsert)"):
                 n = upsert_properties(conn, df)
-                conn.execute(
-                    "INSERT INTO uploads(uploaded_at, rows_read, rows_upserted) VALUES(?,?,?)",
-                    (now_utc(), len(df), n)
-                )
+
+                # log uploads
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
+                        (datetime.utcnow(), int(len(df)), int(n))
+                    )
                 conn.commit()
+
                 st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
 
         st.divider()
         st.subheader("آخرین آپلودها")
-        logs = pd.read_sql_query(
-            "SELECT uploaded_at, rows_read, rows_upserted FROM uploads ORDER BY id DESC LIMIT 20",
-            conn
-        )
-        st.dataframe(logs, use_container_width=True)
+        try:
+            logs = pd.read_sql_query(
+                "select uploaded_at, rows_read, rows_upserted from uploads order by id desc limit 20",
+                conn
+            )
+            st.dataframe(logs, use_container_width=True)
+        except Exception:
+            st.info("لاگ آپلودها هنوز موجود نیست یا دسترسی تنظیم نشده است.")
 
 
 # ---------------------------
@@ -439,7 +453,7 @@ if is_admin:
 if is_admin:
     with tab_add:
         st.subheader("ثبت یا ویرایش ملک (فقط مدیر)")
-        st.caption("اگر کد فایل موجود باشد، اطلاعات آپدیت می‌شود. اگر نباشد، ملک جدید ثبت می‌شود.")
+        st.caption("اگر کد فایل موجود باشد آپدیت می‌شود؛ اگر نباشد ثبت جدید انجام می‌شود.")
 
         c1, c2, c3 = st.columns(3)
 
@@ -457,7 +471,7 @@ if is_admin:
             owner_name = st.text_input("نام مالک (فقط مدیر)")
             owner_phone = st.text_input("شماره تماس مالک (فقط مدیر)")
 
-        address = st.text_input("آدرس/لوکیشن (اگر کامل نیست مهم نیست)")
+        address = st.text_input("آدرس/لوکیشن")
         description = st.text_area("توضیحات")
         internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)")
 
@@ -482,13 +496,14 @@ if is_admin:
                     "updated_at": now_utc(),
                 }
                 upsert_one(conn, row)
-                st.success("ثبت/آپدیت انجام شد.")
+                st.success("ثبت/آپدیت انجام شد (دایمی در Supabase).")
 
         if col_del.button("حذف این کد فایل"):
             if not file_code.strip():
                 st.error("کد فایل را وارد کنید.")
             else:
-                conn.execute("DELETE FROM properties WHERE file_code = ?", (file_code.strip(),))
+                with conn.cursor() as cur:
+                    cur.execute("delete from properties where file_code = %s", (file_code.strip(),))
                 conn.commit()
                 st.success("حذف شد.")
 
@@ -500,12 +515,14 @@ with tab_search:
     st.subheader("جستجو")
 
     deal_opts = ["", "خرید و فروش", "رهن و اجاره"]
-    prop_opts = [""] + [r[0] for r in conn.execute(
-        "SELECT DISTINCT property_type FROM properties WHERE property_type IS NOT NULL AND TRIM(property_type)<>'' ORDER BY property_type"
-    ).fetchall()]
-    region_opts = [""] + [r[0] for r in conn.execute(
-        "SELECT DISTINCT region FROM properties WHERE region IS NOT NULL AND TRIM(region)<>'' ORDER BY region"
-    ).fetchall()]
+
+    # Distinct options (from DB)
+    try:
+        prop_opts = [""] + fetch_distinct(conn, "property_type")
+        region_opts = [""] + fetch_distinct(conn, "region")
+    except Exception:
+        prop_opts = [""]
+        region_opts = [""]
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -528,64 +545,61 @@ with tab_search:
     run = st.button("جستجو")
 
     if run:
-        # Admin sees sensitive fields; Client does not
-        if is_admin:
-            query = """
-                SELECT
-                  file_code, deal_type, region, property_type, area_m2, price_million,
-                  address, description,
-                  owner_name, owner_phone, internal_notes,
-                  updated_at
-                FROM properties
-                WHERE 1=1
-            """
-        else:
-            query = """
-                SELECT
-                  file_code, deal_type, region, property_type, area_m2, price_million,
-                  address, description,
-                  updated_at
-                FROM properties
-                WHERE 1=1
-            """
-
+        # Build dynamic WHERE with %s params
         params = []
+        where = ["1=1"]
 
         if file_code_q.strip():
-            query += " AND file_code LIKE ?"
+            where.append("file_code ILIKE %s")
             params.append(f"%{file_code_q.strip()}%")
 
         if deal:
-            query += " AND deal_type = ?"
+            where.append("deal_type = %s")
             params.append(deal)
 
         if ptype:
-            query += " AND property_type = ?"
+            where.append("property_type = %s")
             params.append(ptype)
 
         if region:
-            query += " AND region = ?"
+            where.append("region = %s")
             params.append(region)
 
         if min_area > 0:
-            query += " AND area_m2 >= ?"
+            where.append("area_m2 >= %s")
             params.append(float(min_area))
 
         if max_area > 0:
-            query += " AND area_m2 <= ?"
+            where.append("area_m2 <= %s")
             params.append(float(max_area))
 
         if min_price > 0:
-            query += " AND price_million >= ?"
+            where.append("price_million >= %s")
             params.append(float(min_price))
 
         if max_price > 0:
-            query += " AND price_million <= ?"
+            where.append("price_million <= %s")
             params.append(float(max_price))
 
-        query += " ORDER BY price_million ASC, updated_at DESC"
+        if is_admin:
+            select_cols = """
+              file_code, deal_type, region, property_type, area_m2, price_million,
+              address, description, owner_name, owner_phone, internal_notes, updated_at
+            """
+        else:
+            select_cols = """
+              file_code, deal_type, region, property_type, area_m2, price_million,
+              address, description, updated_at
+            """
 
-        res = pd.read_sql_query(query, conn, params=params)
+        query = f"""
+          select {select_cols}
+          from properties
+          where {" and ".join(where)}
+          order by price_million asc nulls last, updated_at desc nulls last
+        """
+
+        res = pd.read_sql_query(query, conn, params=tuple(params))
 
         if res.empty:
             st.warning("هیچ نتیجه‌ای پیدا نشد.")
@@ -606,5 +620,5 @@ if not is_admin:
     with tab_help:
         st.subheader("راهنما")
         st.write("شما در حالت مشتری هستید و فقط امکان جستجو و مشاهده فایل‌ها را دارید.")
-        st.write("اطلاعات مالک/شماره تماس فقط برای مدیر نمایش داده می‌شود.")
+        st.write("اطلاعات مالک/شماره تماس/یادداشت داخلی فقط برای مدیر نمایش داده می‌شود.")
         st.write("قیمت‌ها بر حسب **میلیون** هستند (مثلاً 5 میلیارد = 5000).")
