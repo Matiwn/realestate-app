@@ -1242,7 +1242,17 @@ with tab_search:
             csv = res.to_csv(index=False).encode("utf-8-sig")
             st.download_button("دانلود CSV نتایج", csv, "results.csv", "text/csv", key="sr_dl")
 
+# Fix Railway disconnect / restart issue
 
+import socket
+
+def keep_alive():
+    try:
+        socket.gethostbyname("google.com")
+    except:
+        pass
+
+keep_alive()
 # ---------------------------
 # Help tab (Client)
 # ---------------------------
@@ -1253,3 +1263,4 @@ if not is_admin:
         st.write("اطلاعات مالک/شماره تماس/یادداشت داخلی فقط برای مدیر نمایش داده می‌شود.")
         st.write("قیمت‌ها بر حسب **میلیون** هستند (مثلاً 5 میلیارد = 5000).")
         st.write("برای ملک‌هایی مثل زمین/اداری/تجاری، نمایش اتاق خواب انجام نمی‌شود.")
+
