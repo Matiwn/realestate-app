@@ -32,41 +32,54 @@ NOOR_CARD = "#111111"
 NOOR_TEXT = "#F2F2F2"
 NOOR_MUTED = "#B8B8B8"
 NOOR_BORDER = "#2A2A2A"
+NOOR_SIDEBAR = "#0F0F0F"
+NOOR_PILL = "rgba(212,175,55,0.14)"
 
 
 def apply_noor_theme():
     st.markdown(
         f"""
         <style>
+          :root {{
+            --noor-primary: {NOOR_PRIMARY};
+            --noor-bg: {NOOR_BG};
+            --noor-card: {NOOR_CARD};
+            --noor-text: {NOOR_TEXT};
+            --noor-muted: {NOOR_MUTED};
+            --noor-border: {NOOR_BORDER};
+          }}
+
           .stApp {{
-            background: {NOOR_BG};
-            color: {NOOR_TEXT};
+            background: var(--noor-bg);
           }}
 
-          h1, h2, h3, h4, h5, h6, p, span, div, label {{
-            color: {NOOR_TEXT} !important;
+          /* Make almost everything readable */
+          html, body, [class*="css"] {{
+            color: var(--noor-text) !important;
           }}
 
-          .noor-header {{
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 10px 0 6px 0;
+          /* Sidebar */
+          section[data-testid="stSidebar"] {{
+            background: {NOOR_SIDEBAR};
+            border-right: 1px solid var(--noor-border);
           }}
-          .noor-title {{
-            font-size: 28px;
-            font-weight: 800;
-            letter-spacing: 0.2px;
+          section[data-testid="stSidebar"] * {{
+            color: var(--noor-text) !important;
           }}
-          .noor-subtitle {{
-            color: {NOOR_MUTED} !important;
-            font-size: 14px;
-            margin-top: -2px;
+
+          /* Tabs */
+          button[data-baseweb="tab"] {{
+            color: var(--noor-text) !important;
+            border-radius: 14px !important;
+          }}
+          button[data-baseweb="tab"][aria-selected="true"] {{
+            background: rgba(212,175,55,0.16) !important;
+            border: 1px solid rgba(212,175,55,0.35) !important;
           }}
 
           /* Buttons */
           .stButton > button {{
-            background: {NOOR_PRIMARY} !important;
+            background: var(--noor-primary) !important;
             color: #111 !important;
             border: 0 !important;
             border-radius: 12px !important;
@@ -76,31 +89,54 @@ def apply_noor_theme():
 
           /* Inputs */
           .stTextInput input, .stNumberInput input, .stTextArea textarea {{
-            background: {NOOR_CARD} !important;
-            color: {NOOR_TEXT} !important;
-            border: 1px solid {NOOR_BORDER} !important;
+            background: var(--noor-card) !important;
+            color: var(--noor-text) !important;
+            border: 1px solid var(--noor-border) !important;
             border-radius: 12px !important;
           }}
 
-          /* Selects */
+          /* Select / multiselect */
           [data-baseweb="select"] > div {{
-            background: {NOOR_CARD} !important;
-            border: 1px solid {NOOR_BORDER} !important;
+            background: var(--noor-card) !important;
+            border: 1px solid var(--noor-border) !important;
             border-radius: 12px !important;
           }}
+          [data-baseweb="tag"] {{
+            background: {NOOR_PILL} !important;
+            border: 1px solid rgba(212,175,55,0.35) !important;
+            color: var(--noor-primary) !important;
+          }}
 
-          /* Dataframe container */
+          /* Dataframes */
           .stDataFrame {{
-            background: {NOOR_CARD} !important;
-            border: 1px solid {NOOR_BORDER} !important;
+            background: var(--noor-card) !important;
+            border: 1px solid var(--noor-border) !important;
             border-radius: 14px !important;
             padding: 6px;
           }}
 
+          /* Header */
+          .noor-header {{
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0 6px 0;
+          }}
+          .noor-title {{
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: 0.2px;
+          }}
+          .noor-subtitle {{
+            color: var(--noor-muted) !important;
+            font-size: 14px;
+            margin-top: -2px;
+          }}
+
           /* Cards */
           .noor-card {{
-            background: {NOOR_CARD};
-            border: 1px solid {NOOR_BORDER};
+            background: var(--noor-card);
+            border: 1px solid var(--noor-border);
             border-radius: 18px;
             padding: 14px 14px;
             margin-bottom: 12px;
@@ -119,23 +155,23 @@ def apply_noor_theme():
             border-radius: 999px;
             background: rgba(212, 175, 55, 0.14);
             border: 1px solid rgba(212, 175, 55, 0.35);
-            color: {NOOR_PRIMARY} !important;
+            color: var(--noor-primary) !important;
             font-weight: 900;
             font-size: 12px;
             white-space: nowrap;
           }}
           .noor-code {{
-            color: {NOOR_MUTED} !important;
+            color: var(--noor-muted) !important;
             font-weight: 800;
             font-size: 12px;
           }}
           .noor-divider {{
             height: 1px;
-            background: {NOOR_BORDER};
+            background: var(--noor-border);
             margin: 10px 0;
           }}
           .noor-desc {{
-            color: {NOOR_MUTED} !important;
+            color: var(--noor-muted) !important;
             margin-top: 10px;
             font-size: 13px;
             line-height: 1.7;
@@ -147,19 +183,24 @@ def apply_noor_theme():
             margin-top: 10px;
           }}
           .noor-kv {{
-            border: 1px solid {NOOR_BORDER};
+            border: 1px solid var(--noor-border);
             border-radius: 14px;
             padding: 10px 12px;
             background: rgba(255,255,255,0.03);
           }}
           .noor-k {{
-            color: {NOOR_MUTED} !important;
+            color: var(--noor-muted) !important;
             font-size: 12px;
             margin-bottom: 2px;
           }}
           .noor-v {{
             font-size: 15px;
             font-weight: 900;
+          }}
+
+          /* Captions */
+          .stCaption, .stCaption * {{
+            color: var(--noor-muted) !important;
           }}
         </style>
         """,
@@ -217,22 +258,27 @@ def parse_price_million(v) -> float | None:
         return None
     if isinstance(v, (int, float)):
         return float(v)
+
     s = normalize_text(v)
     if not s:
         return None
     s = s.replace(",", "").replace("٬", "").replace(" ", "")
+
     m = re.search(r"(\d+(\.\d+)?)میلیارد", s)
     if m:
         return float(m.group(1)) * 1000.0
+
     m = re.search(r"(\d+(\.\d+)?)میلیون", s)
     if m:
         return float(m.group(1))
+
     m = re.search(r"(\d+(\.\d+)?)", s)
     if m:
         raw = float(m.group(1))
         if raw >= 1_000_000:
             return raw / 1_000_000.0
         return raw
+
     return None
 
 
@@ -351,10 +397,30 @@ def count_client_results(where_sql: str, params: tuple):
     return int(df.iloc[0]["c"])
 
 
+@st.cache_data(ttl=180)
+def fetch_filter_values(_dsn: str):
+    """
+    Values for multiselect filters
+    """
+    conn = get_conn_safe()
+    r1 = pd.read_sql_query(
+        "select distinct trim(region) as v from properties where region is not null and trim(region) <> '' order by v",
+        conn
+    )
+    r2 = pd.read_sql_query(
+        "select distinct trim(property_type) as v from properties where property_type is not null and trim(property_type) <> '' order by v",
+        conn
+    )
+    regions = [normalize_text(x) for x in r1["v"].tolist() if normalize_text(x)]
+    ptypes = [normalize_text(x) for x in r2["v"].tolist() if normalize_text(x)]
+    return regions, ptypes
+
+
 def clear_caches():
     try:
         fetch_minmax_prices.clear()
         count_client_results.clear()
+        fetch_filter_values.clear()
     except Exception:
         pass
 
@@ -416,7 +482,7 @@ st.markdown(
 
 
 # =========================
-# Bedrooms display
+# Bedrooms display (fixed)
 # =========================
 NO_BEDROOM_KEYWORDS = ["زمین", "اداری", "تجاری", "مغازه", "سوله", "انبار", "کارگاه"]
 
@@ -425,18 +491,24 @@ def bedrooms_display(row) -> str:
     ptype = normalize_text(row.get("property_type", ""))
     if any(k in ptype for k in NO_BEDROOM_KEYWORDS):
         return ""
+
     b = row.get("bedrooms")
     if b is None or (isinstance(b, float) and pd.isna(b)):
         return ""
+
+    # robust conversion (even if text)
     try:
-        bi = int(float(b))
+        s = normalize_text(b)
+        if not s:
+            return ""
+        bi = int(float(s))
         return "" if bi <= 0 else str(bi)
     except Exception:
         return ""
 
 
 # =========================
-# Client UI: List + Pagination + Detail page
+# Client: Detail page + list (Pagination + Multiselect)
 # =========================
 def client_property_detail(code: str):
     code = normalize_text(code)
@@ -459,7 +531,6 @@ def client_property_detail(code: str):
 
     r = df.iloc[0].to_dict()
 
-    # back
     if st.button("⬅ بازگشت به لیست فایل‌ها", key="back_to_list_btn"):
         st.session_state.client_selected_file = None
         st.rerun()
@@ -475,9 +546,9 @@ def client_property_detail(code: str):
     desc = normalize_text(r.get("description"))
     area = r.get("area_m2")
     bed = bedrooms_display(r)
-    upd = r.get("updated_at")
 
-    st.markdown(f"<div class='noor-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='noor-card'>", unsafe_allow_html=True)
+
     st.markdown(
         f"""
         <div class="noor-card-top">
@@ -499,7 +570,6 @@ def client_property_detail(code: str):
         unsafe_allow_html=True,
     )
 
-    # kvs
     area_str = ""
     try:
         if area is not None and not (isinstance(area, float) and pd.isna(area)):
@@ -520,9 +590,8 @@ def client_property_detail(code: str):
 
     if address:
         st.markdown(f"<div class='noor-desc'><b style='color:{NOOR_TEXT}'>آدرس:</b> {address}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='noor-desc'><b style='color:{NOOR_TEXT}'>توضیحات:</b> {desc or '—'}</div>", unsafe_allow_html=True)
 
-    # Copy code (simple reliable)
+    st.markdown(f"<div class='noor-desc'><b style='color:{NOOR_TEXT}'>توضیحات:</b> {desc or '—'}</div>", unsafe_allow_html=True)
     st.text_input("کپی کد فایل", value=code, key="copy_code_input", help="روی متن کلیک کن و Copy بزن")
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -533,13 +602,12 @@ def client_property_detail(code: str):
     sim_params = [code]
 
     if region:
-        sim_where.append("trim(region) ILIKE %s")
-        sim_params.append(f"%{region}%")
+        sim_where.append("lower(trim(region)) = lower(trim(%s))")
+        sim_params.append(region)
     if ptype:
-        sim_where.append("trim(property_type) ILIKE %s")
-        sim_params.append(f"%{ptype}%")
+        sim_where.append("lower(trim(property_type)) = lower(trim(%s))")
+        sim_params.append(ptype)
 
-    # Similar price range ±15% if available
     try:
         if price_m is not None and not (isinstance(price_m, float) and pd.isna(price_m)) and float(price_m) > 0:
             p = float(price_m)
@@ -550,7 +618,7 @@ def client_property_detail(code: str):
 
     sim = pd.read_sql_query(
         f"""
-        select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million, description, updated_at
+        select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million, updated_at
         from properties
         where {" and ".join(sim_where)}
         order by updated_at desc nulls last
@@ -596,7 +664,6 @@ def client_property_detail(code: str):
 def client_files_tab():
     st.subheader("فایل‌ها")
 
-    # detail mode
     if "client_selected_file" not in st.session_state:
         st.session_state.client_selected_file = None
 
@@ -608,6 +675,8 @@ def client_files_tab():
     if mx <= 0:
         mx = 10000.0
 
+    regions, ptypes = fetch_filter_values(DATABASE_URL)
+
     top1, top2, top3, top4 = st.columns([1.4, 1, 1, 0.8])
     with top1:
         q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک / توضیحات ...", key="cl_q_noor")
@@ -618,6 +687,13 @@ def client_files_tab():
     with top4:
         page_size = st.selectbox("تعداد در صفحه", [10, 20, 30, 50], index=1, key="cl_pagesize_noor")
 
+    # ✅ Multi-select filters
+    f1, f2 = st.columns([1, 1])
+    with f1:
+        sel_regions = st.multiselect("فیلتر منطقه (چند انتخابی)", options=regions, default=[], key="cl_ms_region_noor")
+    with f2:
+        sel_ptypes = st.multiselect("فیلتر نوع ملک (چند انتخابی)", options=ptypes, default=[], key="cl_ms_ptype_noor")
+
     price_rng = st.slider(
         "بازه قیمت (میلیون) — ۵ میلیارد = ۵۰۰۰",
         min_value=float(mn),
@@ -627,7 +703,6 @@ def client_files_tab():
         key="cl_price_rng_noor"
     )
 
-    # filters -> SQL
     where = ["1=1"]
     params = []
 
@@ -639,6 +714,15 @@ def client_files_tab():
     if deal != "همه":
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
+
+    # multiselect exact match normalized
+    if sel_regions:
+        where.append("lower(trim(region)) = any(%s)")
+        params.append([normalize_text(x).lower() for x in sel_regions])
+
+    if sel_ptypes:
+        where.append("lower(trim(property_type)) = any(%s)")
+        params.append([normalize_text(x).lower() for x in sel_ptypes])
 
     where.append("price_million is not null and price_million >= %s and price_million <= %s")
     params += [float(price_rng[0]), float(price_rng[1])]
@@ -681,7 +765,6 @@ def client_files_tab():
         params=tuple(params + [int(page_size), int(offset)])
     )
 
-    # Cards
     for _, r in df.iterrows():
         code = normalize_text(r.get("file_code"))
         deal_t = normalize_text(r.get("deal_type"))
@@ -731,22 +814,33 @@ def client_files_tab():
             unsafe_allow_html=True
         )
 
-        # detail button (outside html to keep stable)
         if st.button("مشاهده جزئیات", key=f"view_detail_{code}"):
             st.session_state.client_selected_file = code
             st.rerun()
 
 
 # =========================
-# Admin: list + add/edit + upload + applicants
-# (همان نسخه قبلی شما + بدون تغییر اساسی)
+# Admin: list + multiselect + remove duplicate bedroom column
 # =========================
 def admin_files_list_tab():
     st.subheader("لیست فایل‌ها (مدیر)")
 
-    q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="al_q_noor")
-    deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="al_deal_noor")
-    limit = st.selectbox("تعداد نمایش", [50, 100, 200, 500], index=1, key="al_limit_noor")
+    regions, ptypes = fetch_filter_values(DATABASE_URL)
+
+    top1, top2, top3 = st.columns([1.3, 1, 0.8])
+    with top1:
+        q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="al_q_noor")
+    with top2:
+        deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="al_deal_noor")
+    with top3:
+        limit = st.selectbox("تعداد نمایش", [50, 100, 200, 500], index=1, key="al_limit_noor")
+
+    # ✅ Multi-select
+    f1, f2 = st.columns([1, 1])
+    with f1:
+        sel_regions = st.multiselect("فیلتر منطقه (چند انتخابی)", options=regions, default=[], key="al_ms_region_noor")
+    with f2:
+        sel_ptypes = st.multiselect("فیلتر نوع ملک (چند انتخابی)", options=ptypes, default=[], key="al_ms_ptype_noor")
 
     where = ["1=1"]
     params = []
@@ -759,6 +853,14 @@ def admin_files_list_tab():
     if deal != "همه":
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
+
+    if sel_regions:
+        where.append("lower(trim(region)) = any(%s)")
+        params.append([normalize_text(x).lower() for x in sel_regions])
+
+    if sel_ptypes:
+        where.append("lower(trim(property_type)) = any(%s)")
+        params.append([normalize_text(x).lower() for x in sel_ptypes])
 
     df = pd.read_sql_query(
         f"""
@@ -778,13 +880,42 @@ def admin_files_list_tab():
         return
 
     df = df.copy()
+
+    # ✅ only one bedroom column for display
+    df["خواب"] = df.apply(lambda r: bedrooms_display(r.to_dict()), axis=1)
+
     df["قیمت (میلیارد)"] = df["price_million"].apply(billion_str_from_million)
     df["قیمت (تومان)"] = df["price_million"].apply(toman_str_from_million)
-    df["خواب"] = df.apply(bedrooms_display, axis=1)
 
-    st.dataframe(df.drop(columns=["price_million"]), use_container_width=True)
+    # remove raw columns that cause duplicate/ugly display
+    if "bedrooms" in df.columns:
+        df = df.drop(columns=["bedrooms"])
+    if "price_million" in df.columns:
+        df = df.drop(columns=["price_million"])
+
+    # rename for nicer admin output
+    show = df.rename(columns={
+        "file_code": "کد فایل",
+        "deal_type": "نوع معامله",
+        "property_type": "نوع ملک",
+        "region": "منطقه",
+        "area_m2": "متراژ",
+        "owner_name": "مالک",
+        "owner_phone": "شماره مالک",
+        "description": "توضیحات",
+        "updated_at": "آپدیت",
+    })
+
+    # Order columns
+    cols = ["کد فایل", "نوع معامله", "نوع ملک", "منطقه", "متراژ", "خواب", "قیمت (میلیارد)", "قیمت (تومان)",
+            "مالک", "شماره مالک", "توضیحات", "آپدیت"]
+    cols = [c for c in cols if c in show.columns]
+    st.dataframe(show[cols], use_container_width=True)
 
 
+# =========================
+# Admin: add/edit + upload (همان قبلی)
+# =========================
 def admin_add_edit_property_tab():
     st.subheader("ثبت / ویرایش فایل (مدیر)")
 
@@ -1023,7 +1154,7 @@ def admin_upload_tab():
 
 def applicants_tab():
     st.subheader("متقاضیان (مدیر)")
-    st.info("این بخش همان نسخه قبلی شماست. (اگر خواستی مرحله بعدی: نمایش متقاضی‌ها و مچ را هم کارت‌وار می‌کنم.)")
+    st.info("فعلاً تغییری ندادم. اگر خواستی مرحله بعدی: این بخش رو هم کارت‌وار + فیلتر حرفه‌ای می‌کنم.")
 
 
 # =========================
