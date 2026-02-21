@@ -35,162 +35,252 @@ NOOR_BORDER = "#2A2A2A"
 NOOR_SIDEBAR = "#0F0F0F"
 NOOR_PILL = "rgba(212,175,55,0.14)"
 
-def apply_noor_theme():
+        def apply_noor_theme():
     st.markdown(
         """
         <style>
+        /* ---------- Font (Vazirmatn) ---------- */
+        @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;800;900&display=swap');
+
         :root{
-          --bg:#070709;
-          --card:#0f0f14;
-          --border:#2b2b35;
+          --bg:#121419;             /* dark gray */
+          --surface:#171A20;        /* slightly darker */
+          --card:#1B1F27;           /* cards */
+          --card2:#202532;          /* hover/alt */
+          --border:#2B3140;
 
           --gold:#D4AF37;
-          --silver:#D7D9E0;   /* main readable text */
-          --white:#F7F7FA;
+          --gold2:#B9922B;
 
-          --muted:#AEB3C2;    /* labels/captions */
-          --muted2:#8E94A7;   /* helper text */
+          --text:#E7EAF2;           /* main */
+          --muted:#B8BED0;          /* labels */
+          --muted2:#8D94AA;         /* helper */
+          --shadow: 0 10px 30px rgba(0,0,0,0.35);
+          --shadow2: 0 12px 34px rgba(0,0,0,0.45);
+
+          --r-lg:22px;
+          --r-md:16px;
+          --r-sm:12px;
+
+          --fs-base:18px;
+          --fs-label:15px;
+          --fs-title:30px;
+          --fs-sub:14px;
         }
 
-        .stApp{background:var(--bg)!important;}
-        html, body{color:var(--silver)!important;}
+        /* ---------- Global RTL + font + spacing ---------- */
+        html, body, [class*="css"], .stApp{
+          direction: rtl !important;
+          text-align: right !important;
+          font-family: "Vazirmatn", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+          font-size: var(--fs-base) !important;
+          color: var(--text) !important;
+          background: var(--bg) !important;
+        }
 
-        /* Sidebar */
+        /* Reduce Streamlit padding a bit (mobile friendly) */
+        .block-container{
+          padding-top: 1.2rem !important;
+          padding-bottom: 2.2rem !important;
+        }
+
+        /* ---------- Sidebar ---------- */
         section[data-testid="stSidebar"]{
-          background:#0a0a0f !important;
+          background: linear-gradient(180deg, #141721 0%, #10131a 100%) !important;
           border-right:1px solid var(--border);
         }
         section[data-testid="stSidebar"] *{
-          color:var(--silver)!important;
+          color: var(--text) !important;
+          font-size: var(--fs-label) !important;
         }
 
-        /* Titles */
+        /* ---------- Headings ---------- */
         h1,h2,h3,h4,h5,h6{
-          color:var(--white)!important;
-          font-weight:900 !important;
+          color: #FFFFFF !important;
+          font-weight: 900 !important;
+          letter-spacing: 0.2px !important;
+        }
+        h1{font-size: var(--fs-title) !important;}
+        p, li, span, div { color: var(--text) !important; }
+
+        /* ---------- Labels / captions ---------- */
+        label{
+          color: var(--muted) !important;
+          font-size: var(--fs-label) !important;
+          font-weight: 800 !important;
+        }
+        .stCaption, .stCaption *{
+          color: var(--muted2) !important;
+          font-size: 13px !important;
         }
 
-        /* Labels & captions (fix unreadable gray) */
-        label, .stMarkdown, .stText, .stCaption, .stCaption *{
-          color:var(--muted)!important;
-        }
-        .stMarkdown b{color:var(--white)!important;}
-
-        /* Tabs */
+        /* ---------- Tabs (clean premium) ---------- */
         button[data-baseweb="tab"]{
-          color:var(--silver)!important;
-          border-radius:14px!important;
-          background:transparent!important;
-          border:1px solid transparent!important;
+          color: var(--muted) !important;
+          border-radius: 999px !important;
+          background: transparent !important;
+          border: 1px solid transparent !important;
+          font-weight: 900 !important;
+          padding: 10px 14px !important;
         }
         button[data-baseweb="tab"][aria-selected="true"]{
-          background:rgba(212,175,55,0.18)!important;
-          border:1px solid rgba(212,175,55,0.40)!important;
-          color:var(--white)!important;
+          color: #111 !important;
+          background: linear-gradient(135deg, rgba(212,175,55,0.95), rgba(185,146,43,0.95)) !important;
+          border: 1px solid rgba(212,175,55,0.35) !important;
+          box-shadow: 0 8px 20px rgba(212,175,55,0.18) !important;
         }
 
-        /* Buttons */
+        /* ---------- Buttons (lux gold) ---------- */
         .stButton>button{
-          background:var(--gold)!important;
-          color:#111!important;
-          border:0!important;
-          border-radius:12px!important;
-          font-weight:900!important;
+          background: linear-gradient(135deg, var(--gold), var(--gold2)) !important;
+          color: #111 !important;
+          border: 0 !important;
+          border-radius: 16px !important;
+          font-weight: 950 !important;
+          padding: 0.85rem 1.1rem !important;
+          font-size: 16px !important;
+          box-shadow: 0 12px 28px rgba(212,175,55,0.14) !important;
+          transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+        }
+        .stButton>button:hover{
+          transform: translateY(-1px);
+          box-shadow: 0 16px 34px rgba(212,175,55,0.20) !important;
+          opacity: 0.98;
+        }
+        .stButton>button:active{
+          transform: translateY(0px);
+          opacity: 0.95;
         }
 
-        /* Inputs */
+        /* ---------- Inputs (premium) ---------- */
         .stTextInput input, .stNumberInput input, .stTextArea textarea{
-          background:var(--card)!important;
-          color:var(--white)!important;
-          border:1px solid var(--border)!important;
-          border-radius:14px!important;
+          background: rgba(27,31,39,0.85) !important;
+          color: #FFFFFF !important;
+          border: 1px solid rgba(43,49,64,0.95) !important;
+          border-radius: 16px !important;
+          padding: 12px 14px !important;
+          font-size: 16px !important;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
         }
-        .stTextInput input::placeholder{
-          color:var(--muted2)!important;
-          opacity:1!important;
+        .stTextInput input::placeholder, .stTextArea textarea::placeholder{
+          color: var(--muted2) !important;
+          opacity: 1 !important;
         }
 
-        /* Select / MultiSelect */
+        /* ---------- Select / MultiSelect ---------- */
         [data-baseweb="select"] > div{
-          background:var(--card)!important;
-          border:1px solid var(--border)!important;
-          border-radius:14px!important;
+          background: rgba(27,31,39,0.85) !important;
+          border: 1px solid rgba(43,49,64,0.95) !important;
+          border-radius: 16px !important;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
         }
-        /* Placeholder inside select */
-        [data-baseweb="select"] span{
-          color:var(--white)!important;
+        [data-baseweb="select"] span, [data-baseweb="select"] input{
+          color: #FFFFFF !important;
+          font-size: 16px !important;
+          caret-color: var(--gold) !important;
         }
-        [data-baseweb="select"] input{
-          color:var(--white)!important;
-          caret-color:var(--gold)!important;
-        }
-
-        /* Dropdown menu */
         ul[role="listbox"]{
-          background:var(--card)!important;
-          border:1px solid var(--border)!important;
+          background: #141824 !important;
+          border: 1px solid rgba(43,49,64,0.95) !important;
+          border-radius: 16px !important;
+          overflow: hidden !important;
+          box-shadow: var(--shadow2) !important;
         }
         li[role="option"]{
-          color:var(--white)!important;
+          color: #FFFFFF !important;
+          font-size: 16px !important;
+        }
+        li[role="option"]:hover{
+          background: rgba(212,175,55,0.12) !important;
         }
 
-        /* Selected tags for multiselect */
+        /* Multiselect tags */
         [data-baseweb="tag"]{
-          background:rgba(212,175,55,0.16)!important;
-          border:1px solid rgba(212,175,55,0.40)!important;
-          color:var(--gold)!important;
-          font-weight:900!important;
+          background: rgba(212,175,55,0.16) !important;
+          border: 1px solid rgba(212,175,55,0.40) !important;
+          color: var(--gold) !important;
+          font-weight: 950 !important;
+          border-radius: 999px !important;
         }
 
-        /* Dataframe */
+        /* ---------- Dataframe ---------- */
         .stDataFrame{
-          background:var(--card)!important;
-          border:1px solid var(--border)!important;
-          border-radius:16px!important;
-          padding:6px;
+          background: rgba(27,31,39,0.75) !important;
+          border: 1px solid rgba(43,49,64,0.95) !important;
+          border-radius: 18px !important;
+          padding: 8px !important;
+          box-shadow: var(--shadow) !important;
         }
 
-        /* Cards */
+        /* ---------- Noor Cards (glass premium) ---------- */
         .noor-card{
-          background:var(--card);
-          border:1px solid var(--border);
-          border-radius:18px;
-          padding:14px;
-          margin-bottom:12px;
-          box-shadow:0 10px 28px rgba(0,0,0,0.35);
+          background: linear-gradient(180deg, rgba(27,31,39,0.92), rgba(20,24,36,0.92));
+          border: 1px solid rgba(43,49,64,0.95);
+          border-radius: var(--r-lg);
+          padding: 16px;
+          margin-bottom: 14px;
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(8px);
+        }
+        .noor-card-top{
+          display:flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 10px;
+          margin-bottom: 10px;
         }
         .noor-badge{
           display:inline-block;
-          padding:4px 10px;
-          border-radius:999px;
-          background:rgba(212,175,55,0.16);
-          border:1px solid rgba(212,175,55,0.40);
-          color:var(--gold)!important;
-          font-weight:900;
-          font-size:12px;
-          white-space:nowrap;
+          padding: 6px 12px;
+          border-radius: 999px;
+          background: rgba(212,175,55,0.14);
+          border: 1px solid rgba(212,175,55,0.40);
+          color: var(--gold) !important;
+          font-weight: 950;
+          font-size: 13px;
+          white-space: nowrap;
         }
         .noor-code{
-          color:var(--muted)!important;
-          font-weight:800;
-          font-size:12px;
+          color: var(--muted2) !important;
+          font-weight: 800;
+          font-size: 13px;
+          margin-top: 4px;
         }
         .noor-divider{
-          height:1px;
-          background:var(--border);
-          margin:10px 0;
+          height: 1px;
+          background: rgba(43,49,64,0.9);
+          margin: 12px 0;
         }
         .noor-desc{
-          color:var(--silver)!important;
-          font-size:13px;
-          line-height:1.8;
+          color: var(--text) !important;
+          opacity: .92;
+          font-size: 15px;
+          line-height: 1.95;
+        }
+
+        /* ---------- Header block ---------- */
+        .noor-header{
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 8px 0 4px 0;
         }
         .noor-title{
-          color:var(--white)!important;
-          font-weight:900!important;
+          font-size: 28px;
+          font-weight: 950;
+          color: #fff !important;
         }
         .noor-subtitle{
-          color:var(--muted)!important;
+          color: var(--muted) !important;
+          font-size: var(--fs-sub);
+          margin-top: 2px;
+        }
+
+        /* ---------- Mobile tweaks ---------- */
+        @media (max-width: 640px){
+          :root{ --fs-base:17px; --fs-title:26px; }
+          .block-container{ padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
+          .noor-card{ padding: 14px; }
         }
         </style>
         """,
@@ -1169,4 +1259,5 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
 
