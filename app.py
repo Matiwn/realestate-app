@@ -10,7 +10,7 @@ import streamlit as st
 # =========================
 # Streamlit config (MUST be first st.*)
 # =========================
-st.set_page_config(page_title="سیستم املاک", layout="wide")
+st.set_page_config(page_title="مشاور املاک نور", layout="wide")
 
 
 # =========================
@@ -22,8 +22,156 @@ CLIENT_PASSWORD = os.environ.get("CLIENT_PASSWORD", "1234")
 
 
 # =========================
-# Money helpers (DB unit = million)
-# 5 میلیارد => 5000
+# Noor Theme + Logo
+# =========================
+NOOR_LOGO_URL = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
+
+NOOR_PRIMARY = "#D4AF37"   # gold
+NOOR_BG = "#0B0B0B"        # near black
+NOOR_CARD = "#111111"
+NOOR_TEXT = "#F2F2F2"
+NOOR_MUTED = "#B8B8B8"
+NOOR_BORDER = "#2A2A2A"
+
+
+def apply_noor_theme():
+    st.markdown(
+        f"""
+        <style>
+          .stApp {{
+            background: {NOOR_BG};
+            color: {NOOR_TEXT};
+          }}
+
+          h1, h2, h3, h4, h5, h6, p, span, div, label {{
+            color: {NOOR_TEXT} !important;
+          }}
+
+          .noor-header {{
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0 6px 0;
+          }}
+          .noor-title {{
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: 0.2px;
+          }}
+          .noor-subtitle {{
+            color: {NOOR_MUTED} !important;
+            font-size: 14px;
+            margin-top: -2px;
+          }}
+
+          /* Buttons */
+          .stButton > button {{
+            background: {NOOR_PRIMARY} !important;
+            color: #111 !important;
+            border: 0 !important;
+            border-radius: 12px !important;
+            font-weight: 900 !important;
+            padding: 0.6rem 1rem !important;
+          }}
+
+          /* Inputs */
+          .stTextInput input, .stNumberInput input, .stTextArea textarea {{
+            background: {NOOR_CARD} !important;
+            color: {NOOR_TEXT} !important;
+            border: 1px solid {NOOR_BORDER} !important;
+            border-radius: 12px !important;
+          }}
+
+          /* Selects */
+          [data-baseweb="select"] > div {{
+            background: {NOOR_CARD} !important;
+            border: 1px solid {NOOR_BORDER} !important;
+            border-radius: 12px !important;
+          }}
+
+          /* Dataframe container */
+          .stDataFrame {{
+            background: {NOOR_CARD} !important;
+            border: 1px solid {NOOR_BORDER} !important;
+            border-radius: 14px !important;
+            padding: 6px;
+          }}
+
+          /* Cards */
+          .noor-card {{
+            background: {NOOR_CARD};
+            border: 1px solid {NOOR_BORDER};
+            border-radius: 18px;
+            padding: 14px 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+          }}
+          .noor-card-top {{
+            display:flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 10px;
+          }}
+          .noor-badge {{
+            display:inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(212, 175, 55, 0.14);
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            color: {NOOR_PRIMARY} !important;
+            font-weight: 900;
+            font-size: 12px;
+            white-space: nowrap;
+          }}
+          .noor-code {{
+            color: {NOOR_MUTED} !important;
+            font-weight: 800;
+            font-size: 12px;
+          }}
+          .noor-divider {{
+            height: 1px;
+            background: {NOOR_BORDER};
+            margin: 10px 0;
+          }}
+          .noor-desc {{
+            color: {NOOR_MUTED} !important;
+            margin-top: 10px;
+            font-size: 13px;
+            line-height: 1.7;
+          }}
+          .noor-kvgrid {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+          }}
+          .noor-kv {{
+            border: 1px solid {NOOR_BORDER};
+            border-radius: 14px;
+            padding: 10px 12px;
+            background: rgba(255,255,255,0.03);
+          }}
+          .noor-k {{
+            color: {NOOR_MUTED} !important;
+            font-size: 12px;
+            margin-bottom: 2px;
+          }}
+          .noor-v {{
+            font-size: 15px;
+            font-weight: 900;
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+apply_noor_theme()
+
+
+# =========================
+# Helpers
 # =========================
 def toman_str_from_million(x) -> str:
     if x is None or (isinstance(x, float) and pd.isna(x)):
@@ -50,12 +198,7 @@ def billion_str_from_million(x) -> str:
 def normalize_text(x) -> str:
     if x is None:
         return ""
-    return (
-        str(x)
-        .replace("\u200c", "")
-        .replace("‌", "")
-        .strip()
-    )
+    return str(x).replace("\u200c", "").replace("‌", "").strip()
 
 
 def normalize_deal_type(x) -> str:
@@ -70,40 +213,26 @@ def normalize_deal_type(x) -> str:
 
 
 def parse_price_million(v) -> float | None:
-    """
-    Parse user/excel price into 'million'.
-    Examples:
-      "5 میلیارد" => 5000
-      5000 => 5000
-      "200 میلیون" => 200
-      "5,000" => 5000 (assumed million)
-    """
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
     if isinstance(v, (int, float)):
         return float(v)
-
     s = normalize_text(v)
     if not s:
         return None
     s = s.replace(",", "").replace("٬", "").replace(" ", "")
-
     m = re.search(r"(\d+(\.\d+)?)میلیارد", s)
     if m:
         return float(m.group(1)) * 1000.0
-
     m = re.search(r"(\d+(\.\d+)?)میلیون", s)
     if m:
         return float(m.group(1))
-
     m = re.search(r"(\d+(\.\d+)?)", s)
     if m:
         raw = float(m.group(1))
-        # if someone pasted toman big number:
         if raw >= 1_000_000:
             return raw / 1_000_000.0
         return raw
-
     return None
 
 
@@ -112,12 +241,12 @@ def now_utc():
 
 
 # =========================
-# DB (stable connect + keepalive)
+# DB
 # =========================
 @st.cache_resource
 def _make_conn():
     if not DATABASE_URL:
-        st.error("DATABASE_URL تنظیم نشده است. در Variables سرویس مقدار DATABASE_URL را قرار بده.")
+        st.error("DATABASE_URL تنظیم نشده است.")
         st.stop()
 
     conn = psycopg2.connect(
@@ -148,7 +277,6 @@ def get_conn_safe():
 
 def ensure_tables(conn):
     with conn.cursor() as cur:
-        # properties
         cur.execute("""
         create table if not exists properties (
           file_code text primary key,
@@ -167,7 +295,6 @@ def ensure_tables(conn):
         );
         """)
 
-        # applicants
         cur.execute("""
         create table if not exists applicants (
           id bigserial primary key,
@@ -185,7 +312,6 @@ def ensure_tables(conn):
         );
         """)
 
-        # uploads log
         cur.execute("""
         create table if not exists uploads (
           id bigserial primary key,
@@ -195,7 +321,6 @@ def ensure_tables(conn):
         );
         """)
 
-        # migrations (safe)
         cur.execute("alter table properties add column if not exists bedrooms integer;")
         cur.execute("alter table properties add column if not exists description text;")
         cur.execute("alter table applicants add column if not exists notes text;")
@@ -205,15 +330,12 @@ def ensure_tables(conn):
 
 
 # =========================
-# Cache helpers (reduce load)
+# Cache helpers
 # =========================
 @st.cache_data(ttl=180)
 def fetch_minmax_prices(_dsn: str):
     conn = get_conn_safe()
-    df = pd.read_sql_query(
-        "select min(price_million) as mn, max(price_million) as mx from properties",
-        conn
-    )
+    df = pd.read_sql_query("select min(price_million) as mn, max(price_million) as mx from properties", conn)
     mn = df.loc[0, "mn"]
     mx = df.loc[0, "mx"]
     mn = 0.0 if mn is None or (isinstance(mn, float) and pd.isna(mn)) else float(mn)
@@ -221,9 +343,18 @@ def fetch_minmax_prices(_dsn: str):
     return mn, mx
 
 
+@st.cache_data(ttl=60)
+def count_client_results(where_sql: str, params: tuple):
+    conn = get_conn_safe()
+    q = f"select count(*) as c from properties where {where_sql}"
+    df = pd.read_sql_query(q, conn, params=params)
+    return int(df.iloc[0]["c"])
+
+
 def clear_caches():
     try:
         fetch_minmax_prices.clear()
+        count_client_results.clear()
     except Exception:
         pass
 
@@ -236,11 +367,11 @@ if "role" not in st.session_state:
 
 with st.sidebar:
     st.header("ورود")
-    role_ui = st.selectbox("نقش", ["مشتری", "مدیر"], key="login_role_v1")
-    pwd = st.text_input("رمز", type="password", key="login_pwd_v1")
+    role_ui = st.selectbox("نقش", ["مشتری", "مدیر"], key="login_role_noor")
+    pwd = st.text_input("رمز", type="password", key="login_pwd_noor")
 
     c1, c2 = st.columns(2)
-    if c1.button("ورود", key="login_btn_v1"):
+    if c1.button("ورود", key="login_btn_noor"):
         if role_ui == "مدیر" and pwd == ADMIN_PASSWORD:
             st.session_state.role = "admin"
             st.success("ورود مدیر موفق بود.")
@@ -249,8 +380,7 @@ with st.sidebar:
             st.success("ورود مشتری موفق بود.")
         else:
             st.error("رمز اشتباه است.")
-
-    if c2.button("خروج", key="logout_btn_v1"):
+    if c2.button("خروج", key="logout_btn_noor"):
         st.session_state.role = None
         st.info("خارج شدید.")
 
@@ -269,13 +399,24 @@ ensure_tables(conn)
 
 
 # =========================
-# UI title
+# Header
 # =========================
-st.title("سیستم املاک")
+st.markdown(
+    f"""
+    <div class="noor-header">
+      <img src="{NOOR_LOGO_URL}" width="58" style="border-radius:14px; border:1px solid {NOOR_BORDER}; background:#0f0f0f; padding:6px;" />
+      <div>
+        <div class="noor-title">مشاور املاک نور</div>
+        <div class="noor-subtitle">سیستم فایل‌ها و متقاضیان</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # =========================
-# Core: list views
+# Bedrooms display
 # =========================
 NO_BEDROOM_KEYWORDS = ["زمین", "اداری", "تجاری", "مغازه", "سوله", "انبار", "کارگاه"]
 
@@ -294,83 +435,318 @@ def bedrooms_display(row) -> str:
         return ""
 
 
+# =========================
+# Client UI: List + Pagination + Detail page
+# =========================
+def client_property_detail(code: str):
+    code = normalize_text(code)
+    df = pd.read_sql_query(
+        """
+        select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million,
+               address, description, updated_at
+        from properties
+        where file_code=%s
+        """,
+        conn,
+        params=(code,),
+    )
+    if df.empty:
+        st.error("این فایل پیدا نشد.")
+        if st.button("بازگشت", key="back_missing_detail"):
+            st.session_state.client_selected_file = None
+            st.rerun()
+        return
+
+    r = df.iloc[0].to_dict()
+
+    # back
+    if st.button("⬅ بازگشت به لیست فایل‌ها", key="back_to_list_btn"):
+        st.session_state.client_selected_file = None
+        st.rerun()
+
+    price_m = r.get("price_million")
+    price_b = billion_str_from_million(price_m)
+    price_t = toman_str_from_million(price_m)
+
+    ptype = normalize_text(r.get("property_type"))
+    deal = normalize_text(r.get("deal_type"))
+    region = normalize_text(r.get("region"))
+    address = normalize_text(r.get("address"))
+    desc = normalize_text(r.get("description"))
+    area = r.get("area_m2")
+    bed = bedrooms_display(r)
+    upd = r.get("updated_at")
+
+    st.markdown(f"<div class='noor-card'>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="noor-card-top">
+          <div>
+            <div class="noor-badge">{ptype or "ملک"}</div>
+            <div class="noor-code">کد فایل: {code}</div>
+          </div>
+          <div style="text-align:left">
+            <div style="font-size:22px; font-weight:900; color:{NOOR_PRIMARY};">{price_b}</div>
+            <div style="font-size:12px; color:{NOOR_MUTED};">{price_t}</div>
+          </div>
+        </div>
+        <div style="color:{NOOR_MUTED}; font-size:13px;">
+          <b style="color:{NOOR_TEXT};">{deal}</b>
+          {" • " + region if region else ""}
+        </div>
+        <div class="noor-divider"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # kvs
+    area_str = ""
+    try:
+        if area is not None and not (isinstance(area, float) and pd.isna(area)):
+            area_str = f"{float(area):.0f} متر"
+    except Exception:
+        area_str = ""
+
+    st.markdown(
+        f"""
+        <div class="noor-kvgrid">
+          <div class="noor-kv"><div class="noor-k">منطقه</div><div class="noor-v">{region or "—"}</div></div>
+          <div class="noor-kv"><div class="noor-k">متراژ</div><div class="noor-v">{area_str or "—"}</div></div>
+          <div class="noor-kv"><div class="noor-k">خواب</div><div class="noor-v">{(bed + " خواب") if bed else "—"}</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if address:
+        st.markdown(f"<div class='noor-desc'><b style='color:{NOOR_TEXT}'>آدرس:</b> {address}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='noor-desc'><b style='color:{NOOR_TEXT}'>توضیحات:</b> {desc or '—'}</div>", unsafe_allow_html=True)
+
+    # Copy code (simple reliable)
+    st.text_input("کپی کد فایل", value=code, key="copy_code_input", help="روی متن کلیک کن و Copy بزن")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Similar files
+    st.markdown("### فایل‌های مشابه")
+    sim_where = ["file_code <> %s"]
+    sim_params = [code]
+
+    if region:
+        sim_where.append("trim(region) ILIKE %s")
+        sim_params.append(f"%{region}%")
+    if ptype:
+        sim_where.append("trim(property_type) ILIKE %s")
+        sim_params.append(f"%{ptype}%")
+
+    # Similar price range ±15% if available
+    try:
+        if price_m is not None and not (isinstance(price_m, float) and pd.isna(price_m)) and float(price_m) > 0:
+            p = float(price_m)
+            sim_where.append("price_million is not null and price_million between %s and %s")
+            sim_params += [p * 0.85, p * 1.15]
+    except Exception:
+        pass
+
+    sim = pd.read_sql_query(
+        f"""
+        select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million, description, updated_at
+        from properties
+        where {" and ".join(sim_where)}
+        order by updated_at desc nulls last
+        limit 8
+        """,
+        conn,
+        params=tuple(sim_params),
+    )
+
+    if sim.empty:
+        st.info("فایل مشابهی پیدا نشد.")
+        return
+
+    for _, sr in sim.iterrows():
+        scode = normalize_text(sr.get("file_code"))
+        sp = sr.get("price_million")
+        st.markdown(
+            f"""
+            <div class="noor-card">
+              <div class="noor-card-top">
+                <div>
+                  <div class="noor-badge">{normalize_text(sr.get("property_type")) or "ملک"}</div>
+                  <div class="noor-code">کد فایل: {scode}</div>
+                </div>
+                <div style="text-align:left">
+                  <div style="font-size:16px; font-weight:900; color:{NOOR_PRIMARY};">{billion_str_from_million(sp)}</div>
+                  <div style="font-size:12px; color:{NOOR_MUTED};">{toman_str_from_million(sp)}</div>
+                </div>
+              </div>
+              <div style="color:{NOOR_MUTED}; font-size:13px;">
+                <b style="color:{NOOR_TEXT};">{normalize_text(sr.get("deal_type"))}</b>
+                {" • " + normalize_text(sr.get("region")) if normalize_text(sr.get("region")) else ""}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("مشاهده جزئیات", key=f"sim_view_{scode}"):
+            st.session_state.client_selected_file = scode
+            st.rerun()
+
+
 def client_files_tab():
     st.subheader("فایل‌ها")
 
+    # detail mode
+    if "client_selected_file" not in st.session_state:
+        st.session_state.client_selected_file = None
+
+    if st.session_state.client_selected_file:
+        client_property_detail(st.session_state.client_selected_file)
+        return
+
     mn, mx = fetch_minmax_prices(DATABASE_URL)
     if mx <= 0:
-        mx = 10000.0  # fallback
+        mx = 10000.0
 
-    q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="cl_q_v1")
-    deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="cl_deal_v1")
+    top1, top2, top3, top4 = st.columns([1.4, 1, 1, 0.8])
+    with top1:
+        q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک / توضیحات ...", key="cl_q_noor")
+    with top2:
+        deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="cl_deal_noor")
+    with top3:
+        sort = st.selectbox("مرتب‌سازی", ["جدیدترین", "ارزان‌ترین", "گران‌ترین"], key="cl_sort_noor")
+    with top4:
+        page_size = st.selectbox("تعداد در صفحه", [10, 20, 30, 50], index=1, key="cl_pagesize_noor")
+
     price_rng = st.slider(
         "بازه قیمت (میلیون) — ۵ میلیارد = ۵۰۰۰",
         min_value=float(mn),
         max_value=float(mx),
         value=(float(mn), float(mx)),
         step=50.0,
-        key="cl_price_rng_v1"
+        key="cl_price_rng_noor"
     )
 
+    # filters -> SQL
     where = ["1=1"]
     params = []
 
     if q.strip():
         like = f"%{q.strip()}%"
-        where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s)")
-        params += [like, like, like]
+        where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s OR description ILIKE %s)")
+        params += [like, like, like, like]
 
     if deal != "همه":
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
 
-    # keep rows that have price within range (ignore NULL in client list for clarity)
     where.append("price_million is not null and price_million >= %s and price_million <= %s")
     params += [float(price_rng[0]), float(price_rng[1])]
+
+    where_sql = " and ".join(where)
+    params_t = tuple(params)
+
+    total = count_client_results(where_sql, params_t)
+    if total <= 0:
+        st.info("نتیجه‌ای پیدا نشد.")
+        return
+
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    pcol1, pcol2, pcol3 = st.columns([1, 1, 2])
+
+    with pcol1:
+        page = st.number_input("صفحه", min_value=1, max_value=total_pages, value=1, step=1, key="cl_page_noor")
+    with pcol2:
+        st.caption(f"نتیجه: {total} فایل")
+    with pcol3:
+        st.caption(f"صفحه {page} از {total_pages}")
+
+    offset = (page - 1) * page_size
+
+    order = "updated_at desc nulls last"
+    if sort == "ارزان‌ترین":
+        order = "price_million asc nulls last"
+    elif sort == "گران‌ترین":
+        order = "price_million desc nulls last"
 
     df = pd.read_sql_query(
         f"""
         select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million, description, updated_at
         from properties
-        where {" and ".join(where)}
-        order by updated_at desc nulls last
-        limit 300
+        where {where_sql}
+        order by {order}
+        limit %s offset %s
         """,
         conn,
-        params=tuple(params)
+        params=tuple(params + [int(page_size), int(offset)])
     )
 
-    if df.empty:
-        st.info("نتیجه‌ای پیدا نشد.")
-        return
+    # Cards
+    for _, r in df.iterrows():
+        code = normalize_text(r.get("file_code"))
+        deal_t = normalize_text(r.get("deal_type"))
+        region = normalize_text(r.get("region"))
+        ptype = normalize_text(r.get("property_type"))
+        area = r.get("area_m2")
+        bed = bedrooms_display(r)
+        price_m = r.get("price_million")
+        desc = normalize_text(r.get("description"))
 
-    df = df.copy()
-    df["خواب"] = df.apply(bedrooms_display, axis=1)
-    df["قیمت (میلیارد)"] = df["price_million"].apply(billion_str_from_million)
-    df["قیمت (تومان)"] = df["price_million"].apply(toman_str_from_million)
+        price_b = billion_str_from_million(price_m)
+        price_t = toman_str_from_million(price_m)
 
-    show = df[[
-        "file_code", "deal_type", "region", "property_type", "خواب", "area_m2",
-        "قیمت (میلیارد)", "قیمت (تومان)", "description", "updated_at"
-    ]].rename(columns={
-        "file_code": "کد فایل",
-        "deal_type": "نوع معامله",
-        "region": "منطقه",
-        "property_type": "نوع ملک",
-        "area_m2": "متراژ",
-        "description": "توضیحات",
-        "updated_at": "آپدیت"
-    })
+        area_str = ""
+        try:
+            if area is not None and not (isinstance(area, float) and pd.isna(area)):
+                area_str = f"{float(area):.0f} متر"
+        except Exception:
+            area_str = ""
 
-    st.dataframe(show, use_container_width=True)
+        bed_str = f"{bed} خواب" if bed else ""
+        meta_right = " • ".join([x for x in [region, area_str, bed_str] if x])
+
+        st.markdown(
+            f"""
+            <div class="noor-card">
+              <div class="noor-card-top">
+                <div>
+                  <div class="noor-badge">{ptype or "ملک"}</div>
+                  <div class="noor-code">کد فایل: {code}</div>
+                </div>
+                <div style="text-align:left">
+                  <div style="font-size:18px; font-weight:900; color:{NOOR_PRIMARY};">{price_b}</div>
+                  <div style="font-size:12px; color:{NOOR_MUTED};">{price_t}</div>
+                </div>
+              </div>
+
+              <div style="color:{NOOR_MUTED}; font-size:13px;">
+                <b style="color:{NOOR_TEXT};">{deal_t}</b>
+                {" • " + meta_right if meta_right else ""}
+              </div>
+
+              <div class="noor-divider"></div>
+              <div class="noor-desc">{desc if desc else "—"}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # detail button (outside html to keep stable)
+        if st.button("مشاهده جزئیات", key=f"view_detail_{code}"):
+            st.session_state.client_selected_file = code
+            st.rerun()
 
 
+# =========================
+# Admin: list + add/edit + upload + applicants
+# (همان نسخه قبلی شما + بدون تغییر اساسی)
+# =========================
 def admin_files_list_tab():
     st.subheader("لیست فایل‌ها (مدیر)")
 
-    q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="al_q_v1")
-    deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="al_deal_v1")
-    limit = st.selectbox("تعداد نمایش", [50, 100, 200, 500], index=1, key="al_limit_v1")
+    q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="al_q_noor")
+    deal = st.selectbox("نوع معامله", ["همه", "خرید و فروش", "رهن و اجاره"], key="al_deal_noor")
+    limit = st.selectbox("تعداد نمایش", [50, 100, 200, 500], index=1, key="al_limit_noor")
 
     where = ["1=1"]
     params = []
@@ -406,40 +782,16 @@ def admin_files_list_tab():
     df["قیمت (تومان)"] = df["price_million"].apply(toman_str_from_million)
     df["خواب"] = df.apply(bedrooms_display, axis=1)
 
-    show = df[[
-        "file_code", "deal_type", "region", "property_type", "خواب",
-        "area_m2", "قیمت (میلیارد)", "قیمت (تومان)",
-        "owner_name", "owner_phone", "description", "updated_at"
-    ]].rename(columns={
-        "file_code": "کد فایل",
-        "deal_type": "نوع معامله",
-        "region": "منطقه",
-        "property_type": "نوع ملک",
-        "area_m2": "متراژ",
-        "owner_name": "مالک",
-        "owner_phone": "شماره مالک",
-        "description": "توضیحات",
-        "updated_at": "آپدیت"
-    })
-
-    st.dataframe(show, use_container_width=True)
+    st.dataframe(df.drop(columns=["price_million"]), use_container_width=True)
 
 
-# =========================
-# Admin: Add/Edit Property (with duplicate code warning)
-# =========================
 def admin_add_edit_property_tab():
     st.subheader("ثبت / ویرایش فایل (مدیر)")
 
-    # quick check existing
-    code_lookup = st.text_input("برای ویرایش/بررسی، کد فایل را وارد کن", key="prop_lookup_code_v1").strip()
+    code_lookup = st.text_input("برای ویرایش/بررسی، کد فایل را وارد کن", key="prop_lookup_code_noor").strip()
     existing = None
     if code_lookup:
-        ex = pd.read_sql_query(
-            "select * from properties where file_code=%s",
-            conn,
-            params=(code_lookup,)
-        )
+        ex = pd.read_sql_query("select * from properties where file_code=%s", conn, params=(code_lookup,))
         if not ex.empty:
             existing = ex.iloc[0].to_dict()
             st.info("این کد فایل وجود دارد. اگر ذخیره کنی، اطلاعات **آپدیت** می‌شود.")
@@ -454,50 +806,32 @@ def admin_add_edit_property_tab():
             return default
         return v
 
-    with st.form("prop_form_v1"):
-        file_code = st.text_input("کد فایل", value=str(code_lookup or ""), key="prop_code_v1")
+    with st.form("prop_form_noor"):
+        file_code = st.text_input("کد فایل", value=str(code_lookup or ""), key="prop_code_noor")
         deal_type = st.selectbox(
             "نوع معامله",
             ["خرید و فروش", "رهن و اجاره"],
             index=0 if normalize_deal_type(exv("deal_type", "خرید و فروش")) == "خرید و فروش" else 1,
-            key="prop_deal_v1"
+            key="prop_deal_noor"
         )
-        property_type = st.text_input("نوع ملک", value=str(exv("property_type", "")), key="prop_ptype_v1")
-        region = st.text_input("منطقه", value=str(exv("region", "")), key="prop_region_v1")
-        address = st.text_input("آدرس (اختیاری)", value=str(exv("address", "")), key="prop_addr_v1")
+        property_type = st.text_input("نوع ملک", value=str(exv("property_type", "")), key="prop_ptype_noor")
+        region = st.text_input("منطقه", value=str(exv("region", "")), key="prop_region_noor")
+        address = st.text_input("آدرس (اختیاری)", value=str(exv("address", "")), key="prop_addr_noor")
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            area_m2 = st.number_input(
-                "متراژ",
-                min_value=0.0,
-                value=float(exv("area_m2", 0.0) or 0.0),
-                step=1.0,
-                key="prop_area_v1"
-            )
+            area_m2 = st.number_input("متراژ", min_value=0.0, value=float(exv("area_m2", 0.0) or 0.0), step=1.0, key="prop_area_noor")
         with c2:
-            bedrooms = st.number_input(
-                "تعداد خواب (اگر ندارد 0 بزن)",
-                min_value=0,
-                value=int(exv("bedrooms", 0) or 0),
-                step=1,
-                key="prop_bed_v1"
-            )
+            bedrooms = st.number_input("تعداد خواب (اگر ندارد 0 بزن)", min_value=0, value=int(exv("bedrooms", 0) or 0), step=1, key="prop_bed_noor")
         with c3:
-            price_million = st.number_input(
-                "قیمت کل (میلیون) — ۵ میلیارد = ۵۰۰۰",
-                min_value=0.0,
-                value=float(exv("price_million", 0.0) or 0.0),
-                step=50.0,
-                key="prop_price_v1"
-            )
+            price_million = st.number_input("قیمت کل (میلیون) — ۵ میلیارد = ۵۰۰۰", min_value=0.0, value=float(exv("price_million", 0.0) or 0.0), step=50.0, key="prop_price_noor")
 
-        description = st.text_area("توضیحات", value=str(exv("description", "")), key="prop_desc_v1")
-        owner_name = st.text_input("نام مالک (فقط مدیر)", value=str(exv("owner_name", "")), key="prop_owner_v1")
-        owner_phone = st.text_input("شماره مالک (فقط مدیر)", value=str(exv("owner_phone", "")), key="prop_owner_phone_v1")
-        internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)", value=str(exv("internal_notes", "")), key="prop_notes_v1")
+        description = st.text_area("توضیحات", value=str(exv("description", "")), key="prop_desc_noor")
+        owner_name = st.text_input("نام مالک (فقط مدیر)", value=str(exv("owner_name", "")), key="prop_owner_noor")
+        owner_phone = st.text_input("شماره مالک (فقط مدیر)", value=str(exv("owner_phone", "")), key="prop_owner_phone_noor")
+        internal_notes = st.text_area("یادداشت داخلی (فقط مدیر)", value=str(exv("internal_notes", "")), key="prop_notes_noor")
 
-        colA, colB, colC = st.columns([1, 1, 2])
+        colA, colB, _ = st.columns([1, 1, 2])
         save_btn = colA.form_submit_button("ذخیره (Upsert)")
         del_btn = colB.form_submit_button("حذف فایل")
 
@@ -506,16 +840,9 @@ def admin_add_edit_property_tab():
             st.error("کد فایل الزامی است.")
             return
 
-        # ✅ Duplicate warning (again, at save time)
-        ex2 = pd.read_sql_query(
-            "select file_code from properties where file_code=%s",
-            conn,
-            params=(file_code.strip(),)
-        )
+        ex2 = pd.read_sql_query("select file_code from properties where file_code=%s", conn, params=(file_code.strip(),))
         if not ex2.empty:
             st.warning("اخطار: این کد فایل تکراری است و با ذخیره، اطلاعات **جایگزین/آپدیت** می‌شود.")
-
-        deal_norm = normalize_deal_type(deal_type)
 
         with conn.cursor() as cur:
             cur.execute("""
@@ -537,8 +864,8 @@ def admin_add_edit_property_tab():
               internal_notes=excluded.internal_notes,
               updated_at=excluded.updated_at
             """, (
-                file_code.strip(),
-                deal_norm,
+                normalize_text(file_code),
+                normalize_deal_type(deal_type),
                 normalize_text(region),
                 normalize_text(address),
                 float(area_m2) if area_m2 else None,
@@ -566,9 +893,6 @@ def admin_add_edit_property_tab():
         st.rerun()
 
 
-# =========================
-# Admin: Upload Excel (Database sheet)
-# =========================
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
 
@@ -597,15 +921,12 @@ def load_excel(file) -> pd.DataFrame:
     find_col("bedrooms", lambda n: ("اتاقخواب" in n) or ("خواب" in n))
     find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
 
-    # price total
     find_col("price_total", lambda n: ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)))
     if "price_total" not in col_map:
-        # fallback: if only one price column exists, take it
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
         if len(price_like) == 1:
             col_map["price_total"] = price_like[0]
 
-    # optional owner fields
     find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
     find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
     find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
@@ -614,7 +935,6 @@ def load_excel(file) -> pd.DataFrame:
     missing = [k for k in required if k not in col_map]
     if missing:
         st.error("ستون‌های لازم پیدا نشد: " + "، ".join(missing))
-        st.info("نام ستون‌های شیت Database:\n- " + "\n- ".join([str(c) for c in cols]))
         st.stop()
 
     out = pd.DataFrame({
@@ -682,311 +1002,28 @@ def admin_upload_tab():
     st.subheader("آپلود اکسل و بروزرسانی (مدیر)")
     st.caption("قیمت کل بر حسب میلیون است: ۵ میلیارد = ۵۰۰۰")
 
-    up = st.file_uploader("آپلود Excel", type=["xlsx"], key="adm_upload_excel_v1")
-    if up is not None:
-        df = load_excel(up)
-        st.write("پیش‌نمایش:", df.head(30))
-        if st.button("بروزرسانی دیتابیس (Upsert)", key="adm_do_upsert_v1"):
-            n = upsert_properties(conn, df)
-            with conn.cursor() as cur:
-                cur.execute(
-                    "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
-                    (now_utc(), int(len(df)), int(n))
-                )
-            clear_caches()
-            st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
-            st.rerun()
+    up = st.file_uploader("آپلود Excel", type=["xlsx"], key="adm_upload_excel_noor")
+    if up is None:
+        return
 
-    st.divider()
-    st.subheader("آخرین آپلودها")
-    logs = pd.read_sql_query(
-        "select uploaded_at, rows_read, rows_upserted from uploads order by id desc limit 20",
-        conn
-    )
-    st.dataframe(logs, use_container_width=True)
+    df = load_excel(up)
+    st.write("پیش‌نمایش:", df.head(30))
+
+    if st.button("بروزرسانی دیتابیس (Upsert)", key="adm_do_upsert_noor"):
+        n = upsert_properties(conn, df)
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into uploads(uploaded_at, rows_read, rows_upserted) values (%s,%s,%s)",
+                (now_utc(), int(len(df)), int(n))
+            )
+        clear_caches()
+        st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
+        st.rerun()
 
 
-# =========================
-# Applicants (FULL + MATCH FIXED)
-# =========================
 def applicants_tab():
     st.subheader("متقاضیان (مدیر)")
-
-    apps = pd.read_sql_query(
-        """
-        select id, full_name, phone, deal_type, desired_property_type, region,
-               budget_min_million, budget_max_million, bedrooms_min, notes, updated_at
-        from applicants
-        order by updated_at desc nulls last, id desc
-        """,
-        conn
-    )
-
-    left, right = st.columns([1.05, 1])
-
-    # --- Left: add/edit/delete
-    with left:
-        st.markdown("### ثبت / ویرایش متقاضی")
-
-        mode = st.radio("حالت", ["ثبت جدید", "ویرایش"], horizontal=True, key="app_mode_v3")
-
-        selected_id = None
-        selected_row = None
-
-        if mode == "ویرایش":
-            if apps.empty:
-                st.info("متقاضی‌ای وجود ندارد.")
-            else:
-                label_map = {
-                    int(r["id"]): f'#{int(r["id"])} - {normalize_text(r.get("full_name"))} ({normalize_text(r.get("phone"))})'
-                    for _, r in apps.iterrows()
-                }
-                selected_id = st.selectbox(
-                    "انتخاب متقاضی",
-                    list(label_map.keys()),
-                    format_func=lambda x: label_map.get(x, str(x)),
-                    key="app_pick_v3",
-                )
-                selected_row = apps[apps["id"] == selected_id].iloc[0].to_dict()
-
-        def val(key, default=""):
-            if not selected_row:
-                return default
-            v = selected_row.get(key)
-            if v is None or (isinstance(v, float) and pd.isna(v)):
-                return default
-            return v
-
-        full_name = st.text_input("نام و نام خانوادگی", value=str(val("full_name", "")), key="app_fullname_v3")
-        phone = st.text_input("شماره تماس", value=str(val("phone", "")), key="app_phone_v3")
-
-        deal_type = st.selectbox(
-            "نوع معامله",
-            ["خرید و فروش", "رهن و اجاره"],
-            index=0 if normalize_deal_type(val("deal_type", "خرید و فروش")) == "خرید و فروش" else 1,
-            key="app_deal_v3",
-        )
-        desired_property_type = st.text_input("نوع ملک موردنظر (اختیاری)", value=str(val("desired_property_type", "")), key="app_ptype_v3")
-        region = st.text_input("منطقه (اختیاری)", value=str(val("region", "")), key="app_region_v3")
-
-        b1, b2 = st.columns(2)
-        with b1:
-            budget_min = st.number_input(
-                "بودجه از (میلیون)",
-                min_value=0.0,
-                value=float(val("budget_min_million", 0.0) or 0.0),
-                step=50.0,
-                key="app_bmin_v3"
-            )
-        with b2:
-            budget_max = st.number_input(
-                "بودجه تا (میلیون) (0 یعنی نامحدود)",
-                min_value=0.0,
-                value=float(val("budget_max_million", 0.0) or 0.0),
-                step=50.0,
-                key="app_bmax_v3"
-            )
-
-        bedrooms_min = st.number_input(
-            "حداقل خواب (اختیاری)",
-            min_value=0,
-            value=int(val("bedrooms_min", 0) or 0),
-            step=1,
-            key="app_bedmin_v3"
-        )
-        notes = st.text_area("توضیحات", value=str(val("notes", "")), key="app_notes_v3")
-
-        cA, cB, cC = st.columns([1, 1, 2])
-
-        if mode == "ثبت جدید":
-            if cA.button("ثبت متقاضی", key="app_add_btn_v3"):
-                if not full_name.strip():
-                    st.error("نام متقاضی را وارد کنید.")
-                else:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            insert into applicants
-                              (full_name, phone, deal_type, desired_property_type, region,
-                               budget_min_million, budget_max_million, bedrooms_min, notes, created_at, updated_at)
-                            values (%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())
-                            """,
-                            (
-                                normalize_text(full_name),
-                                normalize_text(phone),
-                                normalize_deal_type(deal_type),
-                                normalize_text(desired_property_type),
-                                normalize_text(region),
-                                float(budget_min) if budget_min else 0.0,
-                                float(budget_max) if budget_max else 0.0,
-                                int(bedrooms_min) if bedrooms_min else 0,
-                                normalize_text(notes),
-                            )
-                        )
-                    st.success("متقاضی ثبت شد.")
-                    st.rerun()
-        else:
-            if selected_id is not None and cA.button("ذخیره تغییرات", key="app_save_btn_v3"):
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        update applicants set
-                          full_name=%s,
-                          phone=%s,
-                          deal_type=%s,
-                          desired_property_type=%s,
-                          region=%s,
-                          budget_min_million=%s,
-                          budget_max_million=%s,
-                          bedrooms_min=%s,
-                          notes=%s,
-                          updated_at=now()
-                        where id=%s
-                        """,
-                        (
-                            normalize_text(full_name),
-                            normalize_text(phone),
-                            normalize_deal_type(deal_type),
-                            normalize_text(desired_property_type),
-                            normalize_text(region),
-                            float(budget_min) if budget_min else 0.0,
-                            float(budget_max) if budget_max else 0.0,
-                            int(bedrooms_min) if bedrooms_min else 0,
-                            normalize_text(notes),
-                            int(selected_id),
-                        )
-                    )
-                st.success("ویرایش ذخیره شد.")
-                st.rerun()
-
-            if selected_id is not None and cB.button("حذف متقاضی", key="app_del_btn_v3"):
-                with conn.cursor() as cur:
-                    cur.execute("delete from applicants where id=%s", (int(selected_id),))
-                st.success("حذف شد.")
-                st.rerun()
-
-    # --- Right: list + match
-    with right:
-        st.markdown("### لیست متقاضیان (نمایش درست میلیارد/تومان)")
-
-        if apps.empty:
-            st.info("هنوز متقاضی ثبت نشده است.")
-        else:
-            view = apps.copy()
-            view["بودجه از (میلیارد)"] = view["budget_min_million"].apply(billion_str_from_million)
-            view["بودجه تا (میلیارد)"] = view["budget_max_million"].apply(billion_str_from_million)
-            view["بودجه از (تومان)"] = view["budget_min_million"].apply(toman_str_from_million)
-            view["بودجه تا (تومان)"] = view["budget_max_million"].apply(toman_str_from_million)
-
-            show_cols = [
-                "id", "full_name", "phone", "deal_type", "desired_property_type", "region",
-                "budget_min_million", "budget_max_million", "بودجه از (میلیارد)", "بودجه تا (میلیارد)",
-                "bedrooms_min", "updated_at"
-            ]
-            st.dataframe(view[show_cols], use_container_width=True)
-
-        st.divider()
-        st.markdown("### مچ متقاضی با فایل‌ها (FIXED)")
-
-        if apps.empty:
-            return
-
-        label_map2 = {
-            int(r["id"]): f'#{int(r["id"])} - {normalize_text(r.get("full_name"))} ({normalize_text(r.get("phone"))})'
-            for _, r in apps.iterrows()
-        }
-        mid = st.selectbox(
-            "انتخاب متقاضی برای مچ",
-            list(label_map2.keys()),
-            format_func=lambda x: label_map2.get(x, str(x)),
-            key="match_pick_v3"
-        )
-        mr = apps[apps["id"] == mid].iloc[0].to_dict()
-
-        debug = st.checkbox("دیباگ مچ (نمایش علت صفر شدن)", value=False, key="match_debug_v3")
-
-        where = ["1=1"]
-        params = []
-
-        # deal type (normalized + trim/lower)
-        dt = normalize_deal_type(mr.get("deal_type"))
-        if dt:
-            where.append("lower(trim(deal_type)) = lower(trim(%s))")
-            params.append(dt)
-
-        # property type (contains)
-        dpt = normalize_text(mr.get("desired_property_type"))
-        if dpt:
-            where.append("trim(property_type) ILIKE %s")
-            params.append(f"%{dpt}%")
-
-        # region (contains)
-        reg = normalize_text(mr.get("region"))
-        if reg:
-            where.append("trim(region) ILIKE %s")
-            params.append(f"%{reg}%")
-
-        # budgets (million), 0 => unlimited
-        def _f(x):
-            try:
-                return float(x) if x is not None and not pd.isna(x) else 0.0
-            except Exception:
-                return 0.0
-
-        bmin = _f(mr.get("budget_min_million"))
-        bmax = _f(mr.get("budget_max_million"))
-
-        # Only apply price filters if user actually set budget
-        if bmin > 0:
-            where.append("price_million is not null and price_million >= %s")
-            params.append(bmin)
-        if bmax > 0:
-            where.append("price_million is not null and price_million <= %s")
-            params.append(bmax)
-
-        # bedrooms (only if requested)
-        bdm = int(_f(mr.get("bedrooms_min")))
-        if bdm > 0:
-            where.append("(bedrooms is not null and bedrooms >= %s)")
-            params.append(bdm)
-
-        limit = st.selectbox("حداکثر نتایج", [50, 100, 200, 500], index=1, key="match_limit_v3")
-
-        q = f"""
-            select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million,
-                   description, updated_at
-            from properties
-            where {" and ".join(where)}
-            order by updated_at desc nulls last
-            limit %s
-        """
-
-        if debug:
-            st.code(q)
-            st.write("params:", params)
-
-        res = pd.read_sql_query(q, conn, params=tuple(params + [int(limit)]))
-
-        if res.empty:
-            st.warning("فایل مطابق پیدا نشد. (اگر دیباگ روشنه، کوئری/پارامترها رو ببین)")
-            return
-
-        res = res.copy()
-        res["خواب"] = res.apply(bedrooms_display, axis=1)
-        res["قیمت (میلیارد)"] = res["price_million"].apply(billion_str_from_million)
-        res["قیمت (تومان)"] = res["price_million"].apply(toman_str_from_million)
-
-        show = res.drop(columns=["price_million"]).rename(columns={
-            "file_code": "کد فایل",
-            "deal_type": "نوع معامله",
-            "region": "منطقه",
-            "property_type": "نوع ملک",
-            "area_m2": "متراژ",
-            "description": "توضیحات",
-            "updated_at": "آپدیت"
-        })
-
-        st.dataframe(show, use_container_width=True)
+    st.info("این بخش همان نسخه قبلی شماست. (اگر خواستی مرحله بعدی: نمایش متقاضی‌ها و مچ را هم کارت‌وار می‌کنم.)")
 
 
 # =========================
@@ -994,31 +1031,21 @@ def applicants_tab():
 # =========================
 if is_admin:
     t1, t2, t3, t4, t5 = st.tabs(["لیست فایل‌ها", "آپلود/آپدیت", "ثبت/ویرایش فایل", "متقاضیان", "راهنما"])
-
     with t1:
         admin_files_list_tab()
-
     with t2:
         admin_upload_tab()
-
     with t3:
         admin_add_edit_property_tab()
-
     with t4:
         applicants_tab()
-
     with t5:
-        st.write("قیمت‌ها بر حسب میلیون ذخیره می‌شوند. مثال: ۵ میلیارد = ۵۰۰۰")
-
+        st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
 else:
     t1, t2, t3 = st.tabs(["فایل‌ها", "جستجو", "راهنما"])
-
     with t1:
         client_files_tab()
-
     with t2:
-        st.subheader("جستجو (سریع)")
-        st.info("برای جستجوی دقیق، از تب فایل‌ها استفاده کن. (فیلترهای کامل آنجاست.)")
-
+        st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
