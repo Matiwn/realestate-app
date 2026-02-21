@@ -307,7 +307,31 @@ def apply_noor_theme():
           .noor-vip-card img{ width: 145px; height: 145px; }
           .noor-vip-header-title{ font-size: 28px; }
         }
+/* ===== FIX SLIDER (RTL overflow) ===== */
 
+/* make slider block full width + prevent overflow */
+div[data-testid="stSlider"]{
+  direction: ltr !important;           /* important: slider must be LTR */
+  text-align: left !important;
+  width: 100% !important;
+}
+
+div[data-testid="stSlider"] > div{
+  width: 100% !important;
+  overflow: visible !important;        /* allow handles show correctly */
+}
+
+/* give a little horizontal padding so handles don't go خارج کادر */
+div[data-testid="stSlider"] .stSlider{
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+/* slider labels stay readable in RTL page */
+div[data-testid="stSlider"] label{
+  direction: rtl !important;
+  text-align: right !important;
+}
         </style>
         """,
         unsafe_allow_html=True
@@ -1361,3 +1385,4 @@ else:
     with t2:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
+
