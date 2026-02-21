@@ -36,258 +36,190 @@ NOOR_SIDEBAR = "#0F0F0F"
 NOOR_PILL = "rgba(212,175,55,0.14)"
 
 def apply_noor_theme():
+    st.markdown("""
+    <style>
+
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;800;900&display=swap');
+
+    :root{
+
+        --bg:#151821;
+        --card:#1E222D;
+        --border:#2E3445;
+
+        --gold:#D4AF37;
+
+        --text:#E8EBF2;
+        --muted:#AEB4C6;
+
+    }
+
+    /* GLOBAL */
+
+    html, body, .stApp{
+
+        background: var(--bg) !important;
+
+        font-family: Vazirmatn !important;
+
+        direction: rtl;
+
+        color: var(--text);
+
+    }
+
+
+    /* FIX WHITE HEADER AREA */
+
+    header{
+
+        background: var(--bg) !important;
+
+    }
+
+
+    .main{
+
+        background: var(--bg) !important;
+
+    }
+
+
+    section[data-testid="stSidebar"]{
+
+        background: #131620 !important;
+
+    }
+
+
+    /* INPUT */
+
+    input{
+
+        background: var(--card) !important;
+
+        color: white !important;
+
+    }
+
+
+    textarea{
+
+        background: var(--card) !important;
+
+        color: white !important;
+
+    }
+
+
+    /* SELECT BOX */
+
+    [data-baseweb="select"]{
+
+        background: var(--card) !important;
+
+    }
+
+
+    [data-baseweb="select"] > div{
+
+        background: var(--card) !important;
+
+        color: white !important;
+
+    }
+
+
+    /* DROPDOWN LIST FIX */
+
+    ul[role="listbox"]{
+
+        background: white !important;
+
+    }
+
+
+    li[role="option"]{
+
+        color: black !important;
+
+        font-weight: 600;
+
+    }
+
+
+    li[role="option"]:hover{
+
+        background: #f0f0f0 !important;
+
+        color: black !important;
+
+    }
+
+
+    /* MULTISELECT TAG */
+
+    [data-baseweb="tag"]{
+
+        background: rgba(212,175,55,0.2) !important;
+
+        color: var(--gold) !important;
+
+        border: 1px solid var(--gold);
+
+    }
+
+
+    /* BUTTON */
+
+    .stButton button{
+
+        background: linear-gradient(135deg,#D4AF37,#B8962E);
+
+        color:black;
+
+        font-weight:900;
+
+        border-radius:12px;
+
+    }
+
+
+    </style>
+    """, unsafe_allow_html=True)
+
+
+apply_noor_theme()
+def show_noor_header():
+
+    logo_url = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
+
     st.markdown(
         """
-        <style>
-        /* ---------- Font (Vazirmatn) ---------- */
-        @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;800;900&display=swap');
-
-        :root{
-          --bg:#121419;             /* dark gray */
-          --surface:#171A20;        /* slightly darker */
-          --card:#1B1F27;           /* cards */
-          --card2:#202532;          /* hover/alt */
-          --border:#2B3140;
-
-          --gold:#D4AF37;
-          --gold2:#B9922B;
-
-          --text:#E7EAF2;           /* main */
-          --muted:#B8BED0;          /* labels */
-          --muted2:#8D94AA;         /* helper */
-          --shadow: 0 10px 30px rgba(0,0,0,0.35);
-          --shadow2: 0 12px 34px rgba(0,0,0,0.45);
-
-          --r-lg:22px;
-          --r-md:16px;
-          --r-sm:12px;
-
-          --fs-base:18px;
-          --fs-label:15px;
-          --fs-title:30px;
-          --fs-sub:14px;
-        }
-
-        /* ---------- Global RTL + font + spacing ---------- */
-        html, body, [class*="css"], .stApp{
-          direction: rtl !important;
-          text-align: right !important;
-          font-family: "Vazirmatn", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
-          font-size: var(--fs-base) !important;
-          color: var(--text) !important;
-          background: var(--bg) !important;
-        }
-
-        /* Reduce Streamlit padding a bit (mobile friendly) */
-        .block-container{
-          padding-top: 1.2rem !important;
-          padding-bottom: 2.2rem !important;
-        }
-
-        /* ---------- Sidebar ---------- */
-        section[data-testid="stSidebar"]{
-          background: linear-gradient(180deg, #141721 0%, #10131a 100%) !important;
-          border-right:1px solid var(--border);
-        }
-        section[data-testid="stSidebar"] *{
-          color: var(--text) !important;
-          font-size: var(--fs-label) !important;
-        }
-
-        /* ---------- Headings ---------- */
-        h1,h2,h3,h4,h5,h6{
-          color: #FFFFFF !important;
-          font-weight: 900 !important;
-          letter-spacing: 0.2px !important;
-        }
-        h1{font-size: var(--fs-title) !important;}
-        p, li, span, div { color: var(--text) !important; }
-
-        /* ---------- Labels / captions ---------- */
-        label{
-          color: var(--muted) !important;
-          font-size: var(--fs-label) !important;
-          font-weight: 800 !important;
-        }
-        .stCaption, .stCaption *{
-          color: var(--muted2) !important;
-          font-size: 13px !important;
-        }
-
-        /* ---------- Tabs (clean premium) ---------- */
-        button[data-baseweb="tab"]{
-          color: var(--muted) !important;
-          border-radius: 999px !important;
-          background: transparent !important;
-          border: 1px solid transparent !important;
-          font-weight: 900 !important;
-          padding: 10px 14px !important;
-        }
-        button[data-baseweb="tab"][aria-selected="true"]{
-          color: #111 !important;
-          background: linear-gradient(135deg, rgba(212,175,55,0.95), rgba(185,146,43,0.95)) !important;
-          border: 1px solid rgba(212,175,55,0.35) !important;
-          box-shadow: 0 8px 20px rgba(212,175,55,0.18) !important;
-        }
-
-        /* ---------- Buttons (lux gold) ---------- */
-        .stButton>button{
-          background: linear-gradient(135deg, var(--gold), var(--gold2)) !important;
-          color: #111 !important;
-          border: 0 !important;
-          border-radius: 16px !important;
-          font-weight: 950 !important;
-          padding: 0.85rem 1.1rem !important;
-          font-size: 16px !important;
-          box-shadow: 0 12px 28px rgba(212,175,55,0.14) !important;
-          transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
-        }
-        .stButton>button:hover{
-          transform: translateY(-1px);
-          box-shadow: 0 16px 34px rgba(212,175,55,0.20) !important;
-          opacity: 0.98;
-        }
-        .stButton>button:active{
-          transform: translateY(0px);
-          opacity: 0.95;
-        }
-
-        /* ---------- Inputs (premium) ---------- */
-        .stTextInput input, .stNumberInput input, .stTextArea textarea{
-          background: rgba(27,31,39,0.85) !important;
-          color: #FFFFFF !important;
-          border: 1px solid rgba(43,49,64,0.95) !important;
-          border-radius: 16px !important;
-          padding: 12px 14px !important;
-          font-size: 16px !important;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
-        }
-        .stTextInput input::placeholder, .stTextArea textarea::placeholder{
-          color: var(--muted2) !important;
-          opacity: 1 !important;
-        }
-
-        /* ---------- Select / MultiSelect ---------- */
-        [data-baseweb="select"] > div{
-          background: rgba(27,31,39,0.85) !important;
-          border: 1px solid rgba(43,49,64,0.95) !important;
-          border-radius: 16px !important;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
-        }
-        [data-baseweb="select"] span, [data-baseweb="select"] input{
-          color: #FFFFFF !important;
-          font-size: 16px !important;
-          caret-color: var(--gold) !important;
-        }
-        ul[role="listbox"]{
-          background: #141824 !important;
-          border: 1px solid rgba(43,49,64,0.95) !important;
-          border-radius: 16px !important;
-          overflow: hidden !important;
-          box-shadow: var(--shadow2) !important;
-        }
-        li[role="option"]{
-          color: #FFFFFF !important;
-          font-size: 16px !important;
-        }
-        li[role="option"]:hover{
-          background: rgba(212,175,55,0.12) !important;
-        }
-
-        /* Multiselect tags */
-        [data-baseweb="tag"]{
-          background: rgba(212,175,55,0.16) !important;
-          border: 1px solid rgba(212,175,55,0.40) !important;
-          color: var(--gold) !important;
-          font-weight: 950 !important;
-          border-radius: 999px !important;
-        }
-
-        /* ---------- Dataframe ---------- */
-        .stDataFrame{
-          background: rgba(27,31,39,0.75) !important;
-          border: 1px solid rgba(43,49,64,0.95) !important;
-          border-radius: 18px !important;
-          padding: 8px !important;
-          box-shadow: var(--shadow) !important;
-        }
-
-        /* ---------- Noor Cards (glass premium) ---------- */
-        .noor-card{
-          background: linear-gradient(180deg, rgba(27,31,39,0.92), rgba(20,24,36,0.92));
-          border: 1px solid rgba(43,49,64,0.95);
-          border-radius: var(--r-lg);
-          padding: 16px;
-          margin-bottom: 14px;
-          box-shadow: var(--shadow);
-          backdrop-filter: blur(8px);
-        }
-        .noor-card-top{
-          display:flex;
-          justify-content: space-between;
-          align-items: baseline;
-          gap: 10px;
-          margin-bottom: 10px;
-        }
-        .noor-badge{
-          display:inline-block;
-          padding: 6px 12px;
-          border-radius: 999px;
-          background: rgba(212,175,55,0.14);
-          border: 1px solid rgba(212,175,55,0.40);
-          color: var(--gold) !important;
-          font-weight: 950;
-          font-size: 13px;
-          white-space: nowrap;
-        }
-        .noor-code{
-          color: var(--muted2) !important;
-          font-weight: 800;
-          font-size: 13px;
-          margin-top: 4px;
-        }
-        .noor-divider{
-          height: 1px;
-          background: rgba(43,49,64,0.9);
-          margin: 12px 0;
-        }
-        .noor-desc{
-          color: var(--text) !important;
-          opacity: .92;
-          font-size: 15px;
-          line-height: 1.95;
-        }
-
-        /* ---------- Header block ---------- */
-        .noor-header{
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          padding: 8px 0 4px 0;
-        }
-        .noor-title{
-          font-size: 28px;
-          font-weight: 950;
-          color: #fff !important;
-        }
-        .noor-subtitle{
-          color: var(--muted) !important;
-          font-size: var(--fs-sub);
-          margin-top: 2px;
-        }
-
-        /* ---------- Mobile tweaks ---------- */
-        @media (max-width: 640px){
-          :root{ --fs-base:17px; --fs-title:26px; }
-          .block-container{ padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
-          .noor-card{ padding: 14px; }
-        }
-        </style>
+        <div style="text-align:center; margin-top:10px; margin-bottom:20px;">
         """,
         unsafe_allow_html=True
     )
 
-apply_noor_theme()
+    st.image(logo_url, width=220)
+
+    st.markdown(
+        """
+        <h1 style="text-align:center; margin-bottom:0;">
+        مشاور املاک نور
+        </h1>
+
+        <p style="text-align:center; color:#B8BED0; margin-top:5px;">
+        سیستم فایل‌ها و متقاضیان
+        </p>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+show_noor_header()
 
 
 # =========================
@@ -1259,6 +1191,7 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
 
 
 
