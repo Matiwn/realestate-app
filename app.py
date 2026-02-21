@@ -184,64 +184,55 @@ def apply_noor_theme():
 
     }
 
-/* VIP LOGO */
-
-.noor-vip-logo-container{
-
-    display:flex;
-
-    justify-content:center;
-
-    margin-top:15px;
-
-    margin-bottom:10px;
-
+/* VIP Logo Header */
+.noor-vip-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  margin: 10px 0 18px 0;
 }
 
-.noor-vip-logo{
+.noor-vip-card{
+  width: 210px;
+  height: 210px;
+  border-radius: 34px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(32,37,50,0.75), rgba(20,24,33,0.85));
+  border: 1px solid rgba(212,175,55,0.30);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04) inset,
+    0 18px 45px rgba(0,0,0,0.55),
+    0 0 35px rgba(212,175,55,0.22);
+  backdrop-filter: blur(10px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
 
-    width:170px;
-
-    border-radius:30px;
-
-    padding:15px;
-
-    background:linear-gradient(145deg,#1E222D,#141720);
-
-    box-shadow:
-
-        0 0 25px rgba(212,175,55,0.25),
-
-        0 10px 40px rgba(0,0,0,0.7);
-
+.noor-vip-card img{
+  width: 160px;
+  height: 160px;
+  border-radius: 26px;
+  object-fit: cover;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
 }
 
 .noor-vip-title{
-
-    text-align:center;
-
-    font-size:32px;
-
-    font-weight:900;
-
-    margin-top:10px;
-
-    background: linear-gradient(90deg,#D4AF37,#FFD700);
-
-    -webkit-background-clip:text;
-
-    -webkit-text-fill-color:transparent;
-
+  margin-top: 12px;
+  font-size: 34px;
+  font-weight: 950;
+  line-height: 1.2;
+  background: linear-gradient(90deg, #D4AF37, #FFE07A, #B9922B);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
 }
 
 .noor-vip-sub{
-
-    text-align:center;
-
-    color:#B8BED0;
-
-    font-size:16px;
-
+  margin-top: 6px;
+  color: rgba(231,234,242,0.75);
+  font-size: 15px;
+  font-weight: 700;
 }
     </style>
     """, unsafe_allow_html=True)
@@ -250,61 +241,21 @@ def apply_noor_theme():
 apply_noor_theme()
 
 def show_vip_logo():
-
     logo = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
-
-    st.markdown(f"""
-
-    <div class="noor-vip-logo-container">
-
-        <img src="{logo}" class="noor-vip-logo">
-
-    </div>
-
-    <div class="noor-vip-title">
-
-        مشاور املاک نور
-
-    </div>
-
-    <div class="noor-vip-sub">
-
-        سیستم مدیریت فایل‌ها و متقاضیان
-
-    </div>
-
-    """, unsafe_allow_html=True)
-
-
-show_vip_logo()
-def show_noor_header():
-
-    logo_url = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
-
     st.markdown(
-        """
-        <div style="text-align:center; margin-top:10px; margin-bottom:20px;">
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.image(logo_url, width=220)
-
-    st.markdown(
-        """
-        <h1 style="text-align:center; margin-bottom:0;">
-        مشاور املاک نور
-        </h1>
-
-        <p style="text-align:center; color:#B8BED0; margin-top:5px;">
-        سیستم فایل‌ها و متقاضیان
-        </p>
-
+        f"""
+        <div class="noor-vip-wrap">
+          <div class="noor-vip-card">
+            <img src="{logo}" alt="Noor Logo" />
+          </div>
+          <div class="noor-vip-title">مشاور املاک نور</div>
+          <div class="noor-vip-sub">سیستم مدیریت فایل‌ها و متقاضیان</div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+show_vip_logo()
 
 show_noor_header()
 
@@ -1278,6 +1229,7 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
 
 
 
