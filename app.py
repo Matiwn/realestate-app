@@ -35,178 +35,167 @@ NOOR_BORDER = "#2A2A2A"
 NOOR_SIDEBAR = "#0F0F0F"
 NOOR_PILL = "rgba(212,175,55,0.14)"
 
-
 def apply_noor_theme():
     st.markdown(
-        f"""
+        """
         <style>
-          :root {{
-            --noor-primary: {NOOR_PRIMARY};
-            --noor-bg: {NOOR_BG};
-            --noor-card: {NOOR_CARD};
-            --noor-text: {NOOR_TEXT};
-            --noor-muted: {NOOR_MUTED};
-            --noor-border: {NOOR_BORDER};
-          }}
+        :root{
+          --bg:#070709;
+          --card:#0f0f14;
+          --border:#2b2b35;
 
-          .stApp {{
-            background: var(--noor-bg);
-          }}
+          --gold:#D4AF37;
+          --silver:#D7D9E0;   /* main readable text */
+          --white:#F7F7FA;
 
-          /* Make almost everything readable */
-          html, body, [class*="css"] {{
-            color: var(--noor-text) !important;
-          }}
+          --muted:#AEB3C2;    /* labels/captions */
+          --muted2:#8E94A7;   /* helper text */
+        }
 
-          /* Sidebar */
-          section[data-testid="stSidebar"] {{
-            background: {NOOR_SIDEBAR};
-            border-right: 1px solid var(--noor-border);
-          }}
-          section[data-testid="stSidebar"] * {{
-            color: var(--noor-text) !important;
-          }}
+        .stApp{background:var(--bg)!important;}
+        html, body{color:var(--silver)!important;}
 
-          /* Tabs */
-          button[data-baseweb="tab"] {{
-            color: var(--noor-text) !important;
-            border-radius: 14px !important;
-          }}
-          button[data-baseweb="tab"][aria-selected="true"] {{
-            background: rgba(212,175,55,0.16) !important;
-            border: 1px solid rgba(212,175,55,0.35) !important;
-          }}
+        /* Sidebar */
+        section[data-testid="stSidebar"]{
+          background:#0a0a0f !important;
+          border-right:1px solid var(--border);
+        }
+        section[data-testid="stSidebar"] *{
+          color:var(--silver)!important;
+        }
 
-          /* Buttons */
-          .stButton > button {{
-            background: var(--noor-primary) !important;
-            color: #111 !important;
-            border: 0 !important;
-            border-radius: 12px !important;
-            font-weight: 900 !important;
-            padding: 0.6rem 1rem !important;
-          }}
+        /* Titles */
+        h1,h2,h3,h4,h5,h6{
+          color:var(--white)!important;
+          font-weight:900 !important;
+        }
 
-          /* Inputs */
-          .stTextInput input, .stNumberInput input, .stTextArea textarea {{
-            background: var(--noor-card) !important;
-            color: var(--noor-text) !important;
-            border: 1px solid var(--noor-border) !important;
-            border-radius: 12px !important;
-          }}
+        /* Labels & captions (fix unreadable gray) */
+        label, .stMarkdown, .stText, .stCaption, .stCaption *{
+          color:var(--muted)!important;
+        }
+        .stMarkdown b{color:var(--white)!important;}
 
-          /* Select / multiselect */
-          [data-baseweb="select"] > div {{
-            background: var(--noor-card) !important;
-            border: 1px solid var(--noor-border) !important;
-            border-radius: 12px !important;
-          }}
-          [data-baseweb="tag"] {{
-            background: {NOOR_PILL} !important;
-            border: 1px solid rgba(212,175,55,0.35) !important;
-            color: var(--noor-primary) !important;
-          }}
+        /* Tabs */
+        button[data-baseweb="tab"]{
+          color:var(--silver)!important;
+          border-radius:14px!important;
+          background:transparent!important;
+          border:1px solid transparent!important;
+        }
+        button[data-baseweb="tab"][aria-selected="true"]{
+          background:rgba(212,175,55,0.18)!important;
+          border:1px solid rgba(212,175,55,0.40)!important;
+          color:var(--white)!important;
+        }
 
-          /* Dataframes */
-          .stDataFrame {{
-            background: var(--noor-card) !important;
-            border: 1px solid var(--noor-border) !important;
-            border-radius: 14px !important;
-            padding: 6px;
-          }}
+        /* Buttons */
+        .stButton>button{
+          background:var(--gold)!important;
+          color:#111!important;
+          border:0!important;
+          border-radius:12px!important;
+          font-weight:900!important;
+        }
 
-          /* Header */
-          .noor-header {{
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 10px 0 6px 0;
-          }}
-          .noor-title {{
-            font-size: 28px;
-            font-weight: 900;
-            letter-spacing: 0.2px;
-          }}
-          .noor-subtitle {{
-            color: var(--noor-muted) !important;
-            font-size: 14px;
-            margin-top: -2px;
-          }}
+        /* Inputs */
+        .stTextInput input, .stNumberInput input, .stTextArea textarea{
+          background:var(--card)!important;
+          color:var(--white)!important;
+          border:1px solid var(--border)!important;
+          border-radius:14px!important;
+        }
+        .stTextInput input::placeholder{
+          color:var(--muted2)!important;
+          opacity:1!important;
+        }
 
-          /* Cards */
-          .noor-card {{
-            background: var(--noor-card);
-            border: 1px solid var(--noor-border);
-            border-radius: 18px;
-            padding: 14px 14px;
-            margin-bottom: 12px;
-            box-shadow: 0 8px 22px rgba(0,0,0,0.25);
-          }}
-          .noor-card-top {{
-            display:flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: 10px;
-            margin-bottom: 10px;
-          }}
-          .noor-badge {{
-            display:inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(212, 175, 55, 0.14);
-            border: 1px solid rgba(212, 175, 55, 0.35);
-            color: var(--noor-primary) !important;
-            font-weight: 900;
-            font-size: 12px;
-            white-space: nowrap;
-          }}
-          .noor-code {{
-            color: var(--noor-muted) !important;
-            font-weight: 800;
-            font-size: 12px;
-          }}
-          .noor-divider {{
-            height: 1px;
-            background: var(--noor-border);
-            margin: 10px 0;
-          }}
-          .noor-desc {{
-            color: var(--noor-muted) !important;
-            margin-top: 10px;
-            font-size: 13px;
-            line-height: 1.7;
-          }}
-          .noor-kvgrid {{
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-          }}
-          .noor-kv {{
-            border: 1px solid var(--noor-border);
-            border-radius: 14px;
-            padding: 10px 12px;
-            background: rgba(255,255,255,0.03);
-          }}
-          .noor-k {{
-            color: var(--noor-muted) !important;
-            font-size: 12px;
-            margin-bottom: 2px;
-          }}
-          .noor-v {{
-            font-size: 15px;
-            font-weight: 900;
-          }}
+        /* Select / MultiSelect */
+        [data-baseweb="select"] > div{
+          background:var(--card)!important;
+          border:1px solid var(--border)!important;
+          border-radius:14px!important;
+        }
+        /* Placeholder inside select */
+        [data-baseweb="select"] span{
+          color:var(--white)!important;
+        }
+        [data-baseweb="select"] input{
+          color:var(--white)!important;
+          caret-color:var(--gold)!important;
+        }
 
-          /* Captions */
-          .stCaption, .stCaption * {{
-            color: var(--noor-muted) !important;
-          }}
+        /* Dropdown menu */
+        ul[role="listbox"]{
+          background:var(--card)!important;
+          border:1px solid var(--border)!important;
+        }
+        li[role="option"]{
+          color:var(--white)!important;
+        }
+
+        /* Selected tags for multiselect */
+        [data-baseweb="tag"]{
+          background:rgba(212,175,55,0.16)!important;
+          border:1px solid rgba(212,175,55,0.40)!important;
+          color:var(--gold)!important;
+          font-weight:900!important;
+        }
+
+        /* Dataframe */
+        .stDataFrame{
+          background:var(--card)!important;
+          border:1px solid var(--border)!important;
+          border-radius:16px!important;
+          padding:6px;
+        }
+
+        /* Cards */
+        .noor-card{
+          background:var(--card);
+          border:1px solid var(--border);
+          border-radius:18px;
+          padding:14px;
+          margin-bottom:12px;
+          box-shadow:0 10px 28px rgba(0,0,0,0.35);
+        }
+        .noor-badge{
+          display:inline-block;
+          padding:4px 10px;
+          border-radius:999px;
+          background:rgba(212,175,55,0.16);
+          border:1px solid rgba(212,175,55,0.40);
+          color:var(--gold)!important;
+          font-weight:900;
+          font-size:12px;
+          white-space:nowrap;
+        }
+        .noor-code{
+          color:var(--muted)!important;
+          font-weight:800;
+          font-size:12px;
+        }
+        .noor-divider{
+          height:1px;
+          background:var(--border);
+          margin:10px 0;
+        }
+        .noor-desc{
+          color:var(--silver)!important;
+          font-size:13px;
+          line-height:1.8;
+        }
+        .noor-title{
+          color:var(--white)!important;
+          font-weight:900!important;
+        }
+        .noor-subtitle{
+          color:var(--muted)!important;
+        }
         </style>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
-
 
 apply_noor_theme()
 
@@ -1180,3 +1169,4 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
