@@ -35,7 +35,7 @@ NOOR_BORDER = "#2A2A2A"
 NOOR_SIDEBAR = "#0F0F0F"
 NOOR_PILL = "rgba(212,175,55,0.14)"
 
-        def apply_noor_theme():
+def apply_noor_theme():
     st.markdown(
         """
         <style>
@@ -1259,5 +1259,6 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
 
 
