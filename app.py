@@ -184,12 +184,99 @@ def apply_noor_theme():
 
     }
 
+/* VIP LOGO */
 
+.noor-vip-logo-container{
+
+    display:flex;
+
+    justify-content:center;
+
+    margin-top:15px;
+
+    margin-bottom:10px;
+
+}
+
+.noor-vip-logo{
+
+    width:170px;
+
+    border-radius:30px;
+
+    padding:15px;
+
+    background:linear-gradient(145deg,#1E222D,#141720);
+
+    box-shadow:
+
+        0 0 25px rgba(212,175,55,0.25),
+
+        0 10px 40px rgba(0,0,0,0.7);
+
+}
+
+.noor-vip-title{
+
+    text-align:center;
+
+    font-size:32px;
+
+    font-weight:900;
+
+    margin-top:10px;
+
+    background: linear-gradient(90deg,#D4AF37,#FFD700);
+
+    -webkit-background-clip:text;
+
+    -webkit-text-fill-color:transparent;
+
+}
+
+.noor-vip-sub{
+
+    text-align:center;
+
+    color:#B8BED0;
+
+    font-size:16px;
+
+}
     </style>
     """, unsafe_allow_html=True)
 
 
 apply_noor_theme()
+
+def show_vip_logo():
+
+    logo = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
+
+    st.markdown(f"""
+
+    <div class="noor-vip-logo-container">
+
+        <img src="{logo}" class="noor-vip-logo">
+
+    </div>
+
+    <div class="noor-vip-title">
+
+        مشاور املاک نور
+
+    </div>
+
+    <div class="noor-vip-sub">
+
+        سیستم مدیریت فایل‌ها و متقاضیان
+
+    </div>
+
+    """, unsafe_allow_html=True)
+
+
+show_vip_logo()
 def show_noor_header():
 
     logo_url = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
@@ -1191,6 +1278,7 @@ else:
         st.info("برای جستجوی دقیق، از فیلترهای تب فایل‌ها استفاده کن.")
     with t3:
         st.write("قیمت‌ها بر حسب میلیون هستند. مثال: ۵ میلیارد = ۵۰۰۰")
+
 
 
 
