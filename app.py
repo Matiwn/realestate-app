@@ -33,7 +33,7 @@ def apply_noor_theme():
         @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;800;900&display=swap');
 
         :root{
-          --bg:#151821;         /* dark gray */
+          --bg:#1B1F27;         /* dark gray */
           --surface:#171A20;
           --card:#1B1F27;
           --border:#2B3140;
@@ -1321,7 +1321,52 @@ def applicants_tab():
         }),
         use_container_width=True
     )
+# ---------- Delete Applicant (VIP Modal) ----------
 
+    st.divider()
+    vip_title("حذف متقاضی")
+
+    delete_id = st.selectbox(
+        "انتخاب متقاضی برای حذف",
+        apps["id"].tolist(),
+        format_func=lambda x: f"{int(x)} - {apps.loc[apps['id']==x, 'full_name'].iloc[0]}",
+        key="delete_applicant_select"
+    )
+
+
+    if st.button("حذف متقاضی", key="delete_applicant_btn"):
+
+        @st.dialog("تایید حذف")
+        def confirm_delete():
+
+            st.warning("این عملیات غیرقابل بازگشت است")
+
+            name = apps.loc[apps["id"]==delete_id,"full_name"].iloc[0]
+
+            st.write(f"آیا از حذف «{name}» مطمئن هستید؟")
+
+            col1,col2 = st.columns(2)
+
+            if col1.button("بله حذف شود", key="confirm_delete_yes"):
+
+                with conn.cursor() as cur:
+
+                    cur.execute(
+                        "delete from applicants where id=%s",
+                        (int(delete_id),)
+                    )
+
+                st.success("متقاضی حذف شد")
+
+                st.rerun()
+
+
+            if col2.button("انصراف", key="confirm_delete_no"):
+
+                st.rerun()
+
+
+        confirm_delete()
     st.divider()
     vip_title("مچ کردن متقاضی با فایل‌ها")
 
@@ -1385,4 +1430,5 @@ else:
     with t2:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
+
 
