@@ -1173,6 +1173,32 @@ def admin_add_edit_property_tab():
             ))
 
         clear_caches()
+        for image in uploaded_images:
+
+    file_path = f"{file_code}/{image.name}"
+
+    supabase.storage.from_("property-images").upload(
+        file_path,
+        image.getvalue(),
+        {"content-type": image.type}
+    )
+
+    image_url = supabase.storage.from_(
+        "property-images"
+    ).get_public_url(file_path)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            insert into property_images
+            (file_code,image_url)
+            values (%s,%s)
+            """,
+            (
+                file_code,
+                image_url
+            )
+        )
         st.success("فایل ذخیره شد.")
         st.rerun()
 
@@ -1185,6 +1211,11 @@ def admin_add_edit_property_tab():
         clear_caches()
         st.success("فایل حذف شد.")
         st.rerun()
+        uploaded_images = st.file_uploader(
+    "عکس های ملک",
+    type=["jpg","jpeg","png","webp"],
+    accept_multiple_files=True
+)
 
 
 def admin_upload_tab():
