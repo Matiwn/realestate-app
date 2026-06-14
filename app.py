@@ -1,18 +1,16 @@
 import os
 import re
 from datetime import datetime
-from supabase import create_client
-import uuid
+
 import pandas as pd
 import psycopg2
 import streamlit as st
-
+from supabase import create_client, Client
 
 # =========================
 # Streamlit config (MUST be first st.*)
 # =========================
 st.set_page_config(page_title="مشاور املاک نور", layout="wide")
-
 
 # =========================
 # ENV
@@ -20,18 +18,25 @@ st.set_page_config(page_title="مشاور املاک نور", layout="wide")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@123")
 CLIENT_PASSWORD = os.environ.get("CLIENT_PASSWORD", "1234")
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
 NOOR_LOGO_URL = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
 
+# =========================
+# Supabase client
+# =========================
+@st.cache_resource
+def get_supabase_client() -> Client | None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        st.warning("Supabase URL یا Service Role Key تنظیم نشده است. آپلود تصویر غیرفعال خواهد بود.")
+        return None
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+supabase = get_supabase_client()
 
 # =========================
-# VIP Theme
+# VIP Theme (همان تم قبل)
 # =========================
 def apply_noor_theme():
     st.markdown(
@@ -40,23 +45,19 @@ def apply_noor_theme():
         @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;700;800;900&display=swap');
 
         :root{
-          --bg:#1B1F27;         /* dark gray */
+          --bg:#1B1F27;
           --surface:#171A20;
           --card:#1B1F27;
           --border:#2B3140;
-
           --gold:#D4AF37;
           --gold2:#B9922B;
-
           --text:#E7EAF2;
           --muted:#B8BED0;
           --muted2:#8D94AA;
-
           --shadow: 0 10px 30px rgba(0,0,0,0.35);
           --shadow2: 0 12px 34px rgba(0,0,0,0.45);
         }
 
-        /* Global */
         html, body, [class*="css"], .stApp{
           direction: rtl !important;
           text-align: right !important;
@@ -66,18 +67,12 @@ def apply_noor_theme():
           font-size: 17px !important;
         }
         .stApp{ background: var(--bg) !important; }
-
-        /* Fix white header area */
         header{ background: var(--bg) !important; }
         .main{ background: var(--bg) !important; }
-
-        /* Container padding */
         .block-container{
           padding-top: 1.0rem !important;
           padding-bottom: 2.2rem !important;
         }
-
-        /* Sidebar */
         section[data-testid="stSidebar"]{
           background: linear-gradient(180deg, #141721 0%, #10131a 100%) !important;
           border-right:1px solid var(--border);
@@ -86,10 +81,8 @@ def apply_noor_theme():
           color: var(--text) !important;
           font-size: 15px !important;
         }
-
-        /* Labels */
         label{
-          color: var(--gold2) !important;   /* طلایی تیره */
+          color: var(--gold2) !important;
           font-weight: 900 !important;
           font-size: 15px !important;
         }
@@ -97,8 +90,6 @@ def apply_noor_theme():
           color: var(--muted2) !important;
           font-size: 13px !important;
         }
-
-        /* Tabs */
         button[data-baseweb="tab"]{
           color: var(--muted) !important;
           border-radius: 999px !important;
@@ -113,8 +104,6 @@ def apply_noor_theme():
           border: 1px solid rgba(212,175,55,0.35) !important;
           box-shadow: 0 8px 20px rgba(212,175,55,0.18) !important;
         }
-
-        /* Buttons */
         .stButton>button{
           background: linear-gradient(135deg, var(--gold), var(--gold2)) !important;
           color: #111 !important;
@@ -131,8 +120,6 @@ def apply_noor_theme():
           box-shadow: 0 16px 34px rgba(212,175,55,0.20) !important;
           opacity: 0.98;
         }
-
-        /* Inputs */
         .stTextInput input, .stNumberInput input, .stTextArea textarea{
           background: rgba(27,31,39,0.92) !important;
           color: #FFFFFF !important;
@@ -146,21 +133,15 @@ def apply_noor_theme():
           color: var(--muted2) !important;
           opacity: 1 !important;
         }
-
-        /* Select (control dark) */
         [data-baseweb="select"] > div{
           background: rgba(27,31,39,0.92) !important;
           border: 1px solid rgba(43,49,64,0.95) !important;
           border-radius: 16px !important;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
         }
         [data-baseweb="select"] span, [data-baseweb="select"] input{
           color: #FFFFFF !important;
           font-size: 16px !important;
-          caret-color: var(--gold) !important;
         }
-
-        /* Dropdown list WHITE + black text (your request) */
         ul[role="listbox"]{
           background: #FFFFFF !important;
           border: 1px solid rgba(43,49,64,0.35) !important;
@@ -177,8 +158,6 @@ def apply_noor_theme():
           background: #F2F2F2 !important;
           color: #111111 !important;
         }
-
-        /* Multiselect tags */
         [data-baseweb="tag"]{
           background: rgba(212,175,55,0.16) !important;
           border: 1px solid rgba(212,175,55,0.40) !important;
@@ -186,17 +165,12 @@ def apply_noor_theme():
           font-weight: 950 !important;
           border-radius: 999px !important;
         }
-
-        /* Dataframe */
         .stDataFrame{
           background: rgba(27,31,39,0.75) !important;
           border: 1px solid rgba(43,49,64,0.95) !important;
           border-radius: 18px !important;
           padding: 8px !important;
-          box-shadow: var(--shadow) !important;
         }
-
-        /* Card (for client list) */
         .noor-card{
           background: linear-gradient(180deg, rgba(27,31,39,0.92), rgba(20,24,36,0.92));
           border: 1px solid rgba(43,49,64,0.95);
@@ -241,8 +215,6 @@ def apply_noor_theme():
           font-size: 15px;
           line-height: 1.95;
         }
-
-        /* VIP Title */
         .noor-vip-section{ margin-top: 18px; margin-bottom: 10px; }
         .noor-vip-title{
           font-size: 28px;
@@ -260,8 +232,6 @@ def apply_noor_theme():
           background: linear-gradient(90deg,#D4AF37,#FFE07A);
           box-shadow: 0 0 12px rgba(212,175,55,0.35);
         }
-
-        /* VIP Logo */
         .noor-vip-wrap{
           display:flex;
           flex-direction:column;
@@ -276,10 +246,7 @@ def apply_noor_theme():
           padding: 18px;
           background: linear-gradient(180deg, rgba(32,37,50,0.75), rgba(20,24,33,0.85));
           border: 1px solid rgba(212,175,55,0.30);
-          box-shadow:
-            0 0 0 1px rgba(255,255,255,0.04) inset,
-            0 18px 45px rgba(0,0,0,0.55),
-            0 0 35px rgba(212,175,55,0.22);
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 18px 45px rgba(0,0,0,0.55), 0 0 35px rgba(212,175,55,0.22);
           backdrop-filter: blur(10px);
           display:flex;
           align-items:center;
@@ -296,7 +263,6 @@ def apply_noor_theme():
           margin-top: 12px;
           font-size: 34px;
           font-weight: 950;
-          line-height: 1.2;
           background: linear-gradient(90deg, #D4AF37, #FFE07A, #B9922B);
           -webkit-background-clip:text;
           -webkit-text-fill-color:transparent;
@@ -307,46 +273,50 @@ def apply_noor_theme():
           font-size: 15px;
           font-weight: 700;
         }
-
+        div[data-testid="stSlider"]{
+          direction: ltr !important;
+          text-align: left !important;
+          width: 100% !important;
+        }
+        div[data-testid="stSlider"] > div{
+          width: 100% !important;
+          overflow: visible !important;
+        }
+        /* image gallery styles */
+        .property-gallery {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 16px;
+          margin-top: 20px;
+          margin-bottom: 20px;
+        }
+        .gallery-img {
+          width: 100%;
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: 18px;
+          border: 1px solid rgba(212,175,55,0.4);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+          transition: transform 0.2s ease;
+          cursor: pointer;
+        }
+        .gallery-img:hover {
+          transform: scale(1.02);
+          border-color: var(--gold);
+        }
         @media (max-width: 640px){
           .block-container{ padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
           .noor-vip-card{ width: 190px; height: 190px; }
           .noor-vip-card img{ width: 145px; height: 145px; }
           .noor-vip-header-title{ font-size: 28px; }
+          .property-gallery { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         }
-/* ===== FIX SLIDER (RTL overflow) ===== */
-
-/* make slider block full width + prevent overflow */
-div[data-testid="stSlider"]{
-  direction: ltr !important;           /* important: slider must be LTR */
-  text-align: left !important;
-  width: 100% !important;
-}
-
-div[data-testid="stSlider"] > div{
-  width: 100% !important;
-  overflow: visible !important;        /* allow handles show correctly */
-}
-
-/* give a little horizontal padding so handles don't go خارج کادر */
-div[data-testid="stSlider"] .stSlider{
-  padding-left: 10px !important;
-  padding-right: 10px !important;
-}
-
-/* slider labels stay readable in RTL page */
-div[data-testid="stSlider"] label{
-  direction: rtl !important;
-  text-align: right !important;
-}
         </style>
         """,
         unsafe_allow_html=True
     )
 
-
 apply_noor_theme()
-
 
 def show_vip_logo():
     st.markdown(
@@ -362,7 +332,6 @@ def show_vip_logo():
         unsafe_allow_html=True
     )
 
-
 def vip_title(text: str):
     st.markdown(
         f"""
@@ -374,15 +343,13 @@ def vip_title(text: str):
         unsafe_allow_html=True
     )
 
-
 # =========================
-# Helpers
+# Helpers (همان قبل)
 # =========================
 def normalize_text(x) -> str:
     if x is None:
         return ""
     return str(x).replace("\u200c", "").replace("‌", "").strip()
-
 
 def normalize_deal_type(x) -> str:
     s = normalize_text(x)
@@ -394,38 +361,30 @@ def normalize_deal_type(x) -> str:
         return "خرید و فروش"
     return s
 
-
 def now_utc():
     return datetime.utcnow()
-
 
 def parse_price_million(v) -> float | None:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
     if isinstance(v, (int, float)):
         return float(v)
-
     s = normalize_text(v).replace(",", "").replace("٬", "").replace(" ", "")
     if not s:
         return None
-
     m = re.search(r"(\d+(\.\d+)?)میلیارد", s)
     if m:
         return float(m.group(1)) * 1000.0
-
     m = re.search(r"(\d+(\.\d+)?)میلیون", s)
     if m:
         return float(m.group(1))
-
     m = re.search(r"(\d+(\.\d+)?)", s)
     if m:
         raw = float(m.group(1))
         if raw >= 1_000_000:
             return raw / 1_000_000.0
         return raw
-
     return None
-
 
 def toman_str_from_million(x) -> str:
     if x is None or (isinstance(x, float) and pd.isna(x)):
@@ -435,7 +394,6 @@ def toman_str_from_million(x) -> str:
         return f"{toman:,} تومان"
     except Exception:
         return ""
-
 
 def billion_str_from_million(x) -> str:
     if x is None or (isinstance(x, float) and pd.isna(x)):
@@ -448,9 +406,7 @@ def billion_str_from_million(x) -> str:
     except Exception:
         return ""
 
-
 NO_BEDROOM_KEYWORDS = ["زمین", "اداری", "تجاری", "مغازه", "سوله", "انبار", "کارگاه"]
-
 
 def bedrooms_display(row: dict) -> str:
     ptype = normalize_text(row.get("property_type", ""))
@@ -465,9 +421,8 @@ def bedrooms_display(row: dict) -> str:
     except Exception:
         return ""
 
-
 # =========================
-# DB
+# DB + Image helpers
 # =========================
 @st.cache_resource
 def _make_conn():
@@ -485,7 +440,6 @@ def _make_conn():
     conn.autocommit = True
     return conn
 
-
 def get_conn_safe():
     try:
         conn = _make_conn()
@@ -498,7 +452,6 @@ def get_conn_safe():
         except Exception:
             pass
         return _make_conn()
-
 
 def ensure_tables(conn):
     with conn.cursor() as cur:
@@ -543,7 +496,19 @@ def ensure_tables(conn):
           rows_upserted integer
         );
         """)
-        # ensure columns
+        # جدول تصاویر
+        cur.execute("""
+        create table if not exists property_images (
+          id bigserial primary key,
+          file_code text not null references properties(file_code) on delete cascade,
+          image_url text not null,
+          sort_order integer default 0,
+          uploaded_at timestamp default now()
+        );
+        """)
+        cur.execute("create index if not exists idx_images_file_code on property_images(file_code);")
+
+        # اضافه کردن ستون‌های قدیمی در صورت نبود
         cur.execute("alter table properties add column if not exists bedrooms integer;")
         cur.execute("alter table properties add column if not exists description text;")
         cur.execute("alter table applicants add column if not exists notes text;")
@@ -551,7 +516,56 @@ def ensure_tables(conn):
         cur.execute("alter table applicants add column if not exists budget_min_million numeric;")
         cur.execute("alter table applicants add column if not exists budget_max_million numeric;")
 
+def upload_property_image(file_code: str, uploaded_file) -> str | None:
+    """آپلود تصویر به Supabase Storage و بازگرداندن URL عمومی"""
+    if supabase is None:
+        st.error("سرویس Supabase در دسترس نیست.")
+        return None
+    try:
+        # نام فایل یکتا: file_code/timestamp_filename
+        ext = uploaded_file.name.split('.')[-1].lower()
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        file_path = f"{file_code}/{timestamp}_{uploaded_file.name}"
+        # آپلود
+        res = supabase.storage.from_("property-images").upload(
+            file_path,
+            uploaded_file.getvalue(),
+            {"content-type": uploaded_file.type}
+        )
+        # دریافت URL عمومی
+        public_url = supabase.storage.from_("property-images").get_public_url(file_path)
+        return public_url
+    except Exception as e:
+        st.error(f"خطا در آپلود تصویر: {str(e)}")
+        return None
 
+def delete_property_image(image_id: int, image_url: str):
+    """حذف رکورد تصویر از دیتابیس و فایل از استوریج"""
+    if supabase is None:
+        return
+    try:
+        # استخراج مسیر فایل از URL عمومی
+        # URL عمومی به شکل: https://xxx.supabase.co/storage/v1/object/public/property-images/...
+        path = image_url.split("/public/property-images/")[-1]
+        if path:
+            supabase.storage.from_("property-images").remove([path])
+    except Exception as e:
+        st.warning(f"حذف فایل از استوریج با خطا مواجه شد: {e}")
+    # حذف رکورد دیتابیس
+    conn = get_conn_safe()
+    with conn.cursor() as cur:
+        cur.execute("delete from property_images where id = %s", (image_id,))
+
+def get_property_images(file_code: str) -> pd.DataFrame:
+    conn = get_conn_safe()
+    df = pd.read_sql_query(
+        "select id, image_url, sort_order from property_images where file_code = %s order by sort_order, id",
+        conn,
+        params=(file_code,)
+    )
+    return df
+
+# بقیه توابع قبلی (fetch_filter_values, count_properties, clear_caches) بدون تغییر
 @st.cache_data(ttl=180)
 def fetch_filter_values(_dsn: str):
     conn = get_conn_safe()
@@ -567,7 +581,6 @@ def fetch_filter_values(_dsn: str):
     ptypes = [normalize_text(x) for x in r2["v"].tolist() if normalize_text(x)]
     return regions, ptypes
 
-
 @st.cache_data(ttl=180)
 def fetch_minmax_prices(_dsn: str):
     conn = get_conn_safe()
@@ -578,14 +591,12 @@ def fetch_minmax_prices(_dsn: str):
     mx = 0.0 if mx is None or (isinstance(mx, float) and pd.isna(mx)) else float(mx)
     return mn, mx
 
-
 @st.cache_data(ttl=60)
 def count_properties(where_sql: str, params: tuple):
     conn = get_conn_safe()
     q = f"select count(*) as c from properties where {where_sql}"
     df = pd.read_sql_query(q, conn, params=params)
     return int(df.iloc[0]["c"])
-
 
 def clear_caches():
     try:
@@ -595,9 +606,8 @@ def clear_caches():
     except Exception:
         pass
 
-
 # =========================
-# Auth
+# Auth (بدون تغییر)
 # =========================
 if "role" not in st.session_state:
     st.session_state.role = None
@@ -628,7 +638,6 @@ if st.session_state.role is None:
 
 is_admin = st.session_state.role == "admin"
 
-
 # =========================
 # Init DB
 # =========================
@@ -637,30 +646,24 @@ ensure_tables(conn)
 
 show_vip_logo()
 
-
 # =========================
-# Excel upload helpers
+# Excel upload helpers (بدون تغییر)
 # =========================
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
-
     def norm_col(s):
         return normalize_text(s).replace(" ", "")
-
     cols = list(df.columns)
     cols_norm = {c: norm_col(c) for c in cols}
     col_map = {}
-
     def find_col(key, predicate):
         for c in cols:
             if predicate(cols_norm[c]):
                 col_map[key] = c
                 return
-
     find_col("file_code", lambda n: ("کد" in n) and ("فایل" in n or "ملک" in n))
     if "file_code" not in col_map:
         find_col("file_code", lambda n: "کد" in n)
-
     find_col("deal_type", lambda n: ("نوعمعامله" in n) or ("نوع" in n and "معامله" in n))
     find_col("region", lambda n: "منطقه" in n)
     find_col("address", lambda n: ("آدرس" in n) or ("ادرس" in n))
@@ -668,23 +671,19 @@ def load_excel(file) -> pd.DataFrame:
     find_col("property_type", lambda n: ("نوعملک" in n) or ("نوع" in n and "ملک" in n))
     find_col("bedrooms", lambda n: ("اتاقخواب" in n) or ("خواب" in n))
     find_col("description", lambda n: ("توضیحات" in n) or ("شرح" in n))
-
     find_col("price_total", lambda n: ("قیمتکل" in n) or (("قیمت" in n) and ("کل" in n)))
     if "price_total" not in col_map:
         price_like = [c for c in cols if "قیمت" in cols_norm[c]]
         if len(price_like) == 1:
             col_map["price_total"] = price_like[0]
-
     find_col("owner_name", lambda n: ("مالک" in n) and (("نام" in n) or ("اسم" in n)))
     find_col("owner_phone", lambda n: (("تماس" in n and "مالک" in n) or ("شماره" in n and "مالک" in n) or ("موبایل" in n and "مالک" in n)))
     find_col("internal_notes", lambda n: ("یادداشت" in n) or ("داخلی" in n) or ("نکته" in n))
-
     required = ["file_code", "deal_type", "region", "property_type", "area_m2", "price_total"]
     missing = [k for k in required if k not in col_map]
     if missing:
         st.error("ستون‌های لازم پیدا نشد: " + "، ".join(missing))
         st.stop()
-
     out = pd.DataFrame({
         "file_code": df[col_map["file_code"]].astype(str).str.strip(),
         "deal_type": df[col_map["deal_type"]].apply(normalize_deal_type),
@@ -700,10 +699,8 @@ def load_excel(file) -> pd.DataFrame:
         "internal_notes": df[col_map["internal_notes"]].astype(str).map(normalize_text) if "internal_notes" in col_map else "",
         "updated_at": now_utc(),
     })
-
     out = out[out["file_code"].notna() & (out["file_code"] != "")].copy()
     return out
-
 
 def upsert_properties(conn, df: pd.DataFrame) -> int:
     rows = 0
@@ -744,9 +741,8 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
             rows += 1
     return rows
 
-
 # =========================
-# Client UI
+# Client UI (با نمایش تصاویر)
 # =========================
 def client_property_detail(code: str):
     code = normalize_text(code)
@@ -832,17 +828,25 @@ def client_property_detail(code: str):
         unsafe_allow_html=True
     )
 
+    # نمایش تصاویر
+    images_df = get_property_images(code)
+    if not images_df.empty:
+        st.markdown("<div style='margin-top:20px'><b style='color:var(--gold2);'>تصاویر ملک:</b></div>", unsafe_allow_html=True)
+        cols = st.columns(min(3, len(images_df)))
+        for idx, row in images_df.iterrows():
+            with cols[idx % len(cols)]:
+                st.image(row["image_url"], use_container_width=True, caption=f"تصویر {idx+1}")
+                # optionally add lightbox via st.markdown (optional)
+    else:
+        st.caption("تصویری برای این فایل ثبت نشده است.")
+
     st.text_input("کپی کد فایل", value=code, key="cl_copy_code", help="روی متن کلیک کن و Copy بزن")
-
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 def client_files_tab():
     vip_title("فایل‌ها")
-
     if "client_selected_file" not in st.session_state:
         st.session_state.client_selected_file = None
-
     if st.session_state.client_selected_file:
         client_property_detail(st.session_state.client_selected_file)
         return
@@ -850,11 +854,9 @@ def client_files_tab():
     mn, mx = fetch_minmax_prices(DATABASE_URL)
     if mx <= 0:
         mx = 10000.0
-
     regions, ptypes = fetch_filter_values(DATABASE_URL)
 
     vip_title("جستجوی سریع")
-
     c1, c2, c3, c4 = st.columns([1.4, 1, 1, 0.8])
     with c1:
         q = st.text_input("عبارت جستجو", placeholder="مثلاً: کد فایل، منطقه، نوع ملک، توضیحات…", key="cl_q")
@@ -882,37 +884,30 @@ def client_files_tab():
 
     where = ["1=1"]
     params = []
-
     if q.strip():
         like = f"%{q.strip()}%"
         where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s OR description ILIKE %s)")
         params += [like, like, like, like]
-
     if deal != "همه":
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
-
     if sel_regions:
         where.append("lower(trim(region)) = any(%s)")
         params.append([normalize_text(x).lower() for x in sel_regions])
-
     if sel_ptypes:
         where.append("lower(trim(property_type)) = any(%s)")
         params.append([normalize_text(x).lower() for x in sel_ptypes])
-
     where.append("price_million is not null and price_million between %s and %s")
     params += [float(price_rng[0]), float(price_rng[1])]
 
     where_sql = " and ".join(where)
     params_t = tuple(params)
-
     total = count_properties(where_sql, params_t)
     if total <= 0:
         st.info("نتیجه‌ای پیدا نشد.")
         return
 
     total_pages = max(1, (total + page_size - 1) // page_size)
-
     pc1, pc2, pc3 = st.columns([1, 1, 2])
     with pc1:
         page = st.number_input("صفحه", min_value=1, max_value=total_pages, value=1, step=1, key="cl_page")
@@ -922,7 +917,6 @@ def client_files_tab():
         st.caption(f"صفحه {page} از {total_pages}")
 
     offset = (page - 1) * page_size
-
     order = "updated_at desc nulls last"
     if sort == "ارزان‌ترین":
         order = "price_million asc nulls last"
@@ -950,14 +944,12 @@ def client_files_tab():
         bed = bedrooms_display(r.to_dict())
         price_m = r.get("price_million")
         desc = normalize_text(r.get("description"))
-
         area_str = ""
         try:
             if area is not None and not (isinstance(area, float) and pd.isna(area)):
                 area_str = f"{float(area):.0f} متر"
         except Exception:
             area_str = ""
-
         bed_str = f"{bed} خواب" if bed else ""
         meta_right = " • ".join([x for x in [region, area_str, bed_str] if x])
 
@@ -974,32 +966,26 @@ def client_files_tab():
                   <div style="font-size:12px; color:var(--muted2);">{toman_str_from_million(price_m)}</div>
                 </div>
               </div>
-
               <div style="color:var(--muted); font-size:14px;">
                 <b style="color:var(--text);">{deal_t}</b>
                 {" • " + meta_right if meta_right else ""}
               </div>
-
               <div class="noor-divider"></div>
               <div class="noor-desc">{desc if desc else "—"}</div>
             </div>
             """,
             unsafe_allow_html=True
         )
-
         if st.button("مشاهده جزئیات", key=f"cl_view_{code}"):
             st.session_state.client_selected_file = code
             st.rerun()
 
-
 # =========================
-# Admin UI
+# Admin UI (با مدیریت تصاویر)
 # =========================
 def admin_files_list_tab():
     vip_title("لیست فایل‌ها (مدیر)")
-
     regions, ptypes = fetch_filter_values(DATABASE_URL)
-
     c1, c2, c3 = st.columns([1.3, 1, 0.8])
     with c1:
         q = st.text_input("جستجوی سریع", placeholder="کد فایل / منطقه / نوع ملک ...", key="ad_q")
@@ -1016,20 +1002,16 @@ def admin_files_list_tab():
 
     where = ["1=1"]
     params = []
-
     if q.strip():
         like = f"%{q.strip()}%"
         where.append("(file_code ILIKE %s OR region ILIKE %s OR property_type ILIKE %s)")
         params += [like, like, like]
-
     if deal != "همه":
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
-
     if sel_regions:
         where.append("lower(trim(region)) = any(%s)")
         params.append([normalize_text(x).lower() for x in sel_regions])
-
     if sel_ptypes:
         where.append("lower(trim(property_type)) = any(%s)")
         params.append([normalize_text(x).lower() for x in sel_ptypes])
@@ -1055,8 +1037,6 @@ def admin_files_list_tab():
     df["خواب"] = df.apply(lambda r: bedrooms_display(r.to_dict()), axis=1)
     df["قیمت (میلیارد)"] = df["price_million"].apply(billion_str_from_million)
     df["قیمت (تومان)"] = df["price_million"].apply(toman_str_from_million)
-
-    # remove raw to avoid duplicates
     for c in ["bedrooms", "price_million"]:
         if c in df.columns:
             df = df.drop(columns=[c])
@@ -1072,16 +1052,13 @@ def admin_files_list_tab():
         "description": "توضیحات",
         "updated_at": "آپدیت",
     })
-
     cols = ["کد فایل", "نوع معامله", "نوع ملک", "منطقه", "متراژ", "خواب", "قیمت (میلیارد)", "قیمت (تومان)",
             "مالک", "شماره مالک", "توضیحات", "آپدیت"]
     cols = [c for c in cols if c in show.columns]
     st.dataframe(show[cols], use_container_width=True)
 
-
 def admin_add_edit_property_tab():
     vip_title("ثبت / ویرایش فایل (مدیر)")
-
     code_lookup = st.text_input("برای ویرایش/بررسی، کد فایل را وارد کن", key="prop_lookup").strip()
     existing = None
     if code_lookup:
@@ -1111,7 +1088,6 @@ def admin_add_edit_property_tab():
         property_type = st.text_input("نوع ملک", value=str(exv("property_type", "")), key="prop_ptype")
         region = st.text_input("منطقه", value=str(exv("region", "")), key="prop_region")
         address = st.text_input("آدرس (اختیاری)", value=str(exv("address", "")), key="prop_addr")
-
         c1, c2, c3 = st.columns(3)
         with c1:
             area_m2 = st.number_input("متراژ", min_value=0.0, value=float(exv("area_m2", 0.0) or 0.0), step=1.0, key="prop_area")
@@ -1119,7 +1095,6 @@ def admin_add_edit_property_tab():
             bedrooms = st.number_input("تعداد خواب (اگر ندارد 0 بزن)", min_value=0, value=int(exv("bedrooms", 0) or 0), step=1, key="prop_bed")
         with c3:
             price_million = st.number_input("قیمت کل (میلیون) — ۵ میلیارد = ۵۰۰۰", min_value=0.0, value=float(exv("price_million", 0.0) or 0.0), step=50.0, key="prop_price")
-
         description = st.text_area("توضیحات", value=str(exv("description", "")), key="prop_desc")
         owner_name = st.text_input("نام مالک (فقط مدیر)", value=str(exv("owner_name", "")), key="prop_owner")
         owner_phone = st.text_input("شماره مالک (فقط مدیر)", value=str(exv("owner_phone", "")), key="prop_owner_phone")
@@ -1133,11 +1108,9 @@ def admin_add_edit_property_tab():
         if not file_code.strip():
             st.error("کد فایل الزامی است.")
             return
-
         ex2 = pd.read_sql_query("select file_code from properties where file_code=%s", conn, params=(file_code.strip(),))
         if not ex2.empty:
             st.warning("اخطار: این کد فایل تکراری است و با ذخیره، اطلاعات **جایگزین/آپدیت** می‌شود.")
-
         with conn.cursor() as cur:
             cur.execute("""
             insert into properties
@@ -1171,34 +1144,7 @@ def admin_add_edit_property_tab():
                 normalize_text(owner_phone),
                 normalize_text(internal_notes),
             ))
-
         clear_caches()
-        for image in uploaded_images:
-
-    file_path = f"{file_code}/{image.name}"
-
-    supabase.storage.from_("property-images").upload(
-        file_path,
-        image.getvalue(),
-        {"content-type": image.type}
-    )
-
-    image_url = supabase.storage.from_(
-        "property-images"
-    ).get_public_url(file_path)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            insert into property_images
-            (file_code,image_url)
-            values (%s,%s)
-            """,
-            (
-                file_code,
-                image_url
-            )
-        )
         st.success("فایل ذخیره شد.")
         st.rerun()
 
@@ -1206,29 +1152,65 @@ def admin_add_edit_property_tab():
         if not file_code.strip():
             st.error("برای حذف، کد فایل را وارد کن.")
             return
+        # حذف خودکار تصاویر به دلیل CASCADE در دیتابیس انجام می‌شود
         with conn.cursor() as cur:
             cur.execute("delete from properties where file_code=%s", (file_code.strip(),))
         clear_caches()
         st.success("فایل حذف شد.")
         st.rerun()
-        uploaded_images = st.file_uploader(
-    "عکس های ملک",
-    type=["jpg","jpeg","png","webp"],
-    accept_multiple_files=True
-)
 
+    # ---------- بخش مدیریت تصاویر ----------
+    if file_code.strip():
+        st.divider()
+        vip_title("مدیریت تصاویر")
+        st.caption("می‌توانید تصاویر جدید اضافه کنید یا تصاویر موجود را حذف کنید.")
+
+        # نمایش تصاویر موجود
+        images_df = get_property_images(file_code.strip())
+        if not images_df.empty:
+            st.subheader("تصاویر موجود")
+            cols = st.columns(min(3, len(images_df)))
+            for idx, row in images_df.iterrows():
+                with cols[idx % len(cols)]:
+                    st.image(row["image_url"], use_container_width=True)
+                    if st.button(f"🗑 حذف تصویر {idx+1}", key=f"del_img_{row['id']}"):
+                        delete_property_image(row["id"], row["image_url"])
+                        st.rerun()
+        else:
+            st.info("هیچ تصویری برای این فایل ثبت نشده است.")
+
+        # آپلود تصاویر جدید
+        st.subheader("آپلود تصاویر جدید")
+        uploaded_files = st.file_uploader(
+            "انتخاب تصاویر (JPEG, PNG)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            key="img_uploader"
+        )
+        if uploaded_files and st.button("آپلود تصاویر", key="upload_images_btn"):
+            if supabase is None:
+                st.error("سرویس Supabase در دسترس نیست. لطفاً متغیرهای محیطی را بررسی کنید.")
+            else:
+                for uf in uploaded_files:
+                    url = upload_property_image(file_code.strip(), uf)
+                    if url:
+                        # ذخیره در دیتابیس
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "insert into property_images (file_code, image_url, sort_order) values (%s, %s, %s)",
+                                (file_code.strip(), url, 0)
+                            )
+                st.success("تصاویر آپلود و ثبت شدند.")
+                st.rerun()
 
 def admin_upload_tab():
     vip_title("آپلود / بروزرسانی اکسل (مدیر)")
     st.caption("قیمت‌ها بر حسب میلیون است: ۵ میلیارد = ۵۰۰۰")
-
     up = st.file_uploader("آپلود Excel", type=["xlsx"], key="adm_upload_excel")
     if up is None:
         return
-
     df = load_excel(up)
     st.write("پیش‌نمایش:", df.head(30))
-
     if st.button("بروزرسانی دیتابیس (Upsert)", key="adm_do_upsert"):
         n = upsert_properties(conn, df)
         with conn.cursor() as cur:
@@ -1240,29 +1222,24 @@ def admin_upload_tab():
         st.success(f"انجام شد. {n} ردیف درج/آپدیت شد.")
         st.rerun()
 
-
 # =========================
-# Applicants (Admin)
+# Applicants (Admin) بدون تغییر
 # =========================
 def applicants_match_query(app_row: dict) -> pd.DataFrame:
     where = ["1=1"]
     params = []
-
     deal = normalize_text(app_row.get("deal_type"))
     if deal:
         where.append("lower(trim(deal_type)) = lower(trim(%s))")
         params.append(deal)
-
     region = normalize_text(app_row.get("region"))
     if region:
         where.append("lower(trim(region)) = lower(trim(%s))")
         params.append(region)
-
     ptype = normalize_text(app_row.get("desired_property_type"))
     if ptype:
         where.append("lower(trim(property_type)) = lower(trim(%s))")
         params.append(ptype)
-
     bmin = app_row.get("budget_min_million")
     bmax = app_row.get("budget_max_million")
     if bmin is not None and not (isinstance(bmin, float) and pd.isna(bmin)):
@@ -1271,13 +1248,10 @@ def applicants_match_query(app_row: dict) -> pd.DataFrame:
     if bmax is not None and not (isinstance(bmax, float) and pd.isna(bmax)):
         where.append("price_million is not null and price_million <= %s")
         params.append(float(bmax))
-
     bedmin = app_row.get("bedrooms_min")
     if bedmin is not None and not (isinstance(bedmin, float) and pd.isna(bedmin)):
-        # only apply bedroom filter for properties that have bedrooms
         where.append("(bedrooms is null OR bedrooms >= %s)")
         params.append(int(bedmin))
-
     q = f"""
     select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million, description, updated_at
     from properties
@@ -1286,7 +1260,6 @@ def applicants_match_query(app_row: dict) -> pd.DataFrame:
     limit 80
     """
     return pd.read_sql_query(q, conn, params=tuple(params))
-
 
 def applicants_tab():
     vip_title("متقاضیان (مدیر)")
@@ -1299,7 +1272,6 @@ def applicants_tab():
             deal_type = st.selectbox("نوع معامله", ["خرید و فروش", "رهن و اجاره"], key="app_deal")
             desired_property_type = st.text_input("نوع ملک مدنظر (اختیاری)", key="app_ptype")
             region = st.text_input("منطقه مدنظر (اختیاری)", key="app_region")
-
             c1, c2, c3 = st.columns(3)
             with c1:
                 budget_min = st.number_input("حداقل بودجه (میلیون)", min_value=0.0, value=0.0, step=50.0, key="app_bmin")
@@ -1307,11 +1279,8 @@ def applicants_tab():
                 budget_max = st.number_input("حداکثر بودجه (میلیون)", min_value=0.0, value=5000.0, step=50.0, key="app_bmax")
             with c3:
                 bedrooms_min = st.number_input("حداقل خواب (اختیاری)", min_value=0, value=0, step=1, key="app_bedmin")
-
             notes = st.text_area("توضیحات/نیازها", key="app_notes")
-
             save_app = st.form_submit_button("ثبت متقاضی")
-
         if save_app:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -1338,11 +1307,9 @@ def applicants_tab():
         "from applicants order by created_at desc limit 200",
         conn
     )
-
     if apps.empty:
         st.info("هنوز متقاضی ثبت نشده است.")
         return
-
     st.dataframe(
         apps.rename(columns={
             "id": "ID",
@@ -1359,69 +1326,42 @@ def applicants_tab():
         }),
         use_container_width=True
     )
-# ---------- Delete Applicant (VIP Modal) ----------
-
     st.divider()
     vip_title("حذف متقاضی")
-
     delete_id = st.selectbox(
         "انتخاب متقاضی برای حذف",
         apps["id"].tolist(),
         format_func=lambda x: f"{int(x)} - {apps.loc[apps['id']==x, 'full_name'].iloc[0]}",
         key="delete_applicant_select"
     )
-
-
     if st.button("حذف متقاضی", key="delete_applicant_btn"):
-
         @st.dialog("تایید حذف")
         def confirm_delete():
-
             st.warning("این عملیات غیرقابل بازگشت است")
-
             name = apps.loc[apps["id"]==delete_id,"full_name"].iloc[0]
-
             st.write(f"آیا از حذف «{name}» مطمئن هستید؟")
-
             col1,col2 = st.columns(2)
-
             if col1.button("بله حذف شود", key="confirm_delete_yes"):
-
                 with conn.cursor() as cur:
-
-                    cur.execute(
-                        "delete from applicants where id=%s",
-                        (int(delete_id),)
-                    )
-
+                    cur.execute("delete from applicants where id=%s", (int(delete_id),))
                 st.success("متقاضی حذف شد")
-
                 st.rerun()
-
-
             if col2.button("انصراف", key="confirm_delete_no"):
-
                 st.rerun()
-
-
         confirm_delete()
     st.divider()
     vip_title("مچ کردن متقاضی با فایل‌ها")
-
     sel_id = st.selectbox(
         "انتخاب متقاضی برای مچ",
         options=apps["id"].tolist(),
         format_func=lambda x: f"{int(x)} - {apps.loc[apps['id']==x, 'full_name'].iloc[0]}",
         key="app_sel_id"
     )
-
     app_row = apps[apps["id"] == sel_id].iloc[0].to_dict()
     matches = applicants_match_query(app_row)
-
     if matches.empty:
         st.warning("فایل مطابق پیدا نشد.")
         return
-
     matches = matches.copy()
     matches["خواب"] = matches.apply(lambda r: bedrooms_display(r.to_dict()), axis=1)
     matches["قیمت (میلیارد)"] = matches["price_million"].apply(billion_str_from_million)
@@ -1429,7 +1369,6 @@ def applicants_tab():
     for c in ["price_million", "bedrooms"]:
         if c in matches.columns:
             matches = matches.drop(columns=[c])
-
     matches = matches.rename(columns={
         "file_code": "کد فایل",
         "deal_type": "نوع معامله",
@@ -1439,11 +1378,9 @@ def applicants_tab():
         "description": "توضیحات",
         "updated_at": "آپدیت",
     })
-
     cols = ["کد فایل", "نوع معامله", "نوع ملک", "منطقه", "متراژ", "خواب", "قیمت (میلیارد)", "قیمت (تومان)", "توضیحات", "آپدیت"]
     cols = [c for c in cols if c in matches.columns]
     st.dataframe(matches[cols], use_container_width=True)
-
 
 # =========================
 # Main Tabs
@@ -1468,5 +1405,3 @@ else:
     with t2:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
-
-
