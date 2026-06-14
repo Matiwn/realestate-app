@@ -522,16 +522,21 @@ def upload_property_image(file_code: str, uploaded_file) -> str | None:
         st.error("سرویس Supabase در دسترس نیست.")
         return None
     try:
-        # نام فایل یکتا: file_code/timestamp_filename
-        ext = uploaded_file.name.split('.')[-1].lower()
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        file_path = f"{file_code}/{timestamp}_{uploaded_file.name}"
-        # آپلود
+        safe_filename = re.sub(r'[^a-zA-Z0-9\.\-_]', '_', uploaded_file.name)
+        file_path = f"{file_code}/{timestamp}_{safe_filename}"
+        
+        # آپلود فایل (نسخه جدید)
         res = supabase.storage.from_("property-images").upload(
             file_path,
-            uploaded_file.getvalue(),
-            {"content-type": uploaded_file.type}
+            uploaded_file.getvalue()
         )
+        
+        # بررسی پاسخ (در نسخه جدید res یک دیکشنری است)
+        if isinstance(res, dict) and 'error' in res:
+            st.error(f"خطا در آپلود: {res['error']}")
+            return None
+            
         # دریافت URL عمومی
         public_url = supabase.storage.from_("property-images").get_public_url(file_path)
         return public_url
@@ -545,17 +550,17 @@ def delete_property_image(image_id: int, image_url: str):
         return
     try:
         # استخراج مسیر فایل از URL عمومی
-        # URL عمومی به شکل: https://xxx.supabase.co/storage/v1/object/public/property-images/...
-        path = image_url.split("/public/property-images/")[-1]
-        if path:
-            supabase.storage.from_("property-images").remove([path])
+        if "/public/property-images/" in image_url:
+            path = image_url.split("/public/property-images/")[-1]
+            if path:
+                supabase.storage.from_("property-images").remove([path])
     except Exception as e:
         st.warning(f"حذف فایل از استوریج با خطا مواجه شد: {e}")
+    
     # حذف رکورد دیتابیس
     conn = get_conn_safe()
     with conn.cursor() as cur:
         cur.execute("delete from property_images where id = %s", (image_id,))
-
 def get_property_images(file_code: str) -> pd.DataFrame:
     conn = get_conn_safe()
     df = pd.read_sql_query(
