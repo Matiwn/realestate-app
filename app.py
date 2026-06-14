@@ -1,7 +1,8 @@
 import os
 import re
 from datetime import datetime
-
+from supabase import create_client
+import uuid
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -19,7 +20,13 @@ st.set_page_config(page_title="مشاور املاک نور", layout="wide")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@123")
 CLIENT_PASSWORD = os.environ.get("CLIENT_PASSWORD", "1234")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 NOOR_LOGO_URL = "https://tpjkzusrrkwppbhsmsno.supabase.co/storage/v1/object/public/logos/noor.png"
 
 
