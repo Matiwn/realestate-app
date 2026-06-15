@@ -526,20 +526,26 @@ def upload_property_image(file_code: str, uploaded_file) -> str | None:
         safe_filename = re.sub(r'[^a-zA-Z0-9\.\-_]', '_', uploaded_file.name)
         file_path = f"{file_code}/{timestamp}_{safe_filename}"
         
-        # آپلود فایل (نسخه جدید)
-        res = supabase.storage.from_("property-images").upload(
+        # آپلود فایل
+        result = supabase.storage.from_("property-images").upload(
             file_path,
             uploaded_file.getvalue()
         )
         
-        # بررسی پاسخ (در نسخه جدید res یک دیکشنری است)
-        if isinstance(res, dict) and 'error' in res:
-            st.error(f"خطا در آپلود: {res['error']}")
+        # بررسی نتیجه: اگر خطا وجود داشته باشد، result یک دیکشنری با کلید 'error' است
+        if isinstance(result, dict) and 'error' in result:
+            st.error(f"خطا در آپلود: {result['error']}")
             return None
+            
+        # در نسخه‌های جدید، اگر موفق باشد، یک دیکشنری با کلید 'Key' برمی‌گرداند
+        if isinstance(result, dict) and 'Key' not in result:
+            # بعضی نسخه‌ها ممکن است خالی برگردانند، پس باز هم امتحان می‌کنیم
+            pass
             
         # دریافت URL عمومی
         public_url = supabase.storage.from_("property-images").get_public_url(file_path)
         return public_url
+        
     except Exception as e:
         st.error(f"خطا در آپلود تصویر: {str(e)}")
         return None
@@ -549,7 +555,6 @@ def delete_property_image(image_id: int, image_url: str):
     if supabase is None:
         return
     try:
-        # استخراج مسیر فایل از URL عمومی
         if "/public/property-images/" in image_url:
             path = image_url.split("/public/property-images/")[-1]
             if path:
@@ -557,7 +562,6 @@ def delete_property_image(image_id: int, image_url: str):
     except Exception as e:
         st.warning(f"حذف فایل از استوریج با خطا مواجه شد: {e}")
     
-    # حذف رکورد دیتابیس
     conn = get_conn_safe()
     with conn.cursor() as cur:
         cur.execute("delete from property_images where id = %s", (image_id,))
