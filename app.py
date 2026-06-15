@@ -36,7 +36,7 @@ def get_supabase_client() -> Client | None:
 supabase = get_supabase_client()
 
 # =========================
-# VIP Theme (همان تم قبل)
+# VIP Theme
 # =========================
 def apply_noor_theme():
     st.markdown(
@@ -282,7 +282,6 @@ def apply_noor_theme():
           width: 100% !important;
           overflow: visible !important;
         }
-        /* image gallery styles */
         .property-gallery {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -344,7 +343,7 @@ def vip_title(text: str):
     )
 
 # =========================
-# Helpers (همان قبل)
+# Helpers
 # =========================
 def normalize_text(x) -> str:
     if x is None:
@@ -422,7 +421,7 @@ def bedrooms_display(row: dict) -> str:
         return ""
 
 # =========================
-# DB + Image helpers
+# DB
 # =========================
 @st.cache_resource
 def _make_conn():
@@ -525,27 +524,11 @@ def upload_property_image(file_code: str, uploaded_file) -> str | None:
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         safe_filename = re.sub(r'[^a-zA-Z0-9\.\-_]', '_', uploaded_file.name)
         file_path = f"{file_code}/{timestamp}_{safe_filename}"
-        
         # آپلود فایل
-        result = supabase.storage.from_("property-images").upload(
-            file_path,
-            uploaded_file.getvalue()
-        )
-        
-        # بررسی نتیجه: اگر خطا وجود داشته باشد، result یک دیکشنری با کلید 'error' است
-        if isinstance(result, dict) and 'error' in result:
-            st.error(f"خطا در آپلود: {result['error']}")
-            return None
-            
-        # در نسخه‌های جدید، اگر موفق باشد، یک دیکشنری با کلید 'Key' برمی‌گرداند
-        if isinstance(result, dict) and 'Key' not in result:
-            # بعضی نسخه‌ها ممکن است خالی برگردانند، پس باز هم امتحان می‌کنیم
-            pass
-            
+        supabase.storage.from_("property-images").upload(file_path, uploaded_file.getvalue())
         # دریافت URL عمومی
         public_url = supabase.storage.from_("property-images").get_public_url(file_path)
         return public_url
-        
     except Exception as e:
         st.error(f"خطا در آپلود تصویر: {str(e)}")
         return None
@@ -561,10 +544,11 @@ def delete_property_image(image_id: int, image_url: str):
                 supabase.storage.from_("property-images").remove([path])
     except Exception as e:
         st.warning(f"حذف فایل از استوریج با خطا مواجه شد: {e}")
-    
+    # حذف رکورد دیتابیس
     conn = get_conn_safe()
     with conn.cursor() as cur:
         cur.execute("delete from property_images where id = %s", (image_id,))
+
 def get_property_images(file_code: str) -> pd.DataFrame:
     conn = get_conn_safe()
     df = pd.read_sql_query(
@@ -574,7 +558,6 @@ def get_property_images(file_code: str) -> pd.DataFrame:
     )
     return df
 
-# بقیه توابع قبلی (fetch_filter_values, count_properties, clear_caches) بدون تغییر
 @st.cache_data(ttl=180)
 def fetch_filter_values(_dsn: str):
     conn = get_conn_safe()
@@ -616,7 +599,7 @@ def clear_caches():
         pass
 
 # =========================
-# Auth (بدون تغییر)
+# Auth
 # =========================
 if "role" not in st.session_state:
     st.session_state.role = None
@@ -656,7 +639,7 @@ ensure_tables(conn)
 show_vip_logo()
 
 # =========================
-# Excel upload helpers (بدون تغییر)
+# Excel upload helpers
 # =========================
 def load_excel(file) -> pd.DataFrame:
     df = pd.read_excel(file, sheet_name="Database", engine="openpyxl")
@@ -751,7 +734,7 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
     return rows
 
 # =========================
-# Client UI (با نمایش تصاویر)
+# Client UI
 # =========================
 def client_property_detail(code: str):
     code = normalize_text(code)
@@ -845,7 +828,6 @@ def client_property_detail(code: str):
         for idx, row in images_df.iterrows():
             with cols[idx % len(cols)]:
                 st.image(row["image_url"], use_container_width=True, caption=f"تصویر {idx+1}")
-                # optionally add lightbox via st.markdown (optional)
     else:
         st.caption("تصویری برای این فایل ثبت نشده است.")
 
@@ -990,7 +972,7 @@ def client_files_tab():
             st.rerun()
 
 # =========================
-# Admin UI (با مدیریت تصاویر)
+# Admin UI
 # =========================
 def admin_files_list_tab():
     vip_title("لیست فایل‌ها (مدیر)")
@@ -1161,56 +1143,66 @@ def admin_add_edit_property_tab():
         if not file_code.strip():
             st.error("برای حذف، کد فایل را وارد کن.")
             return
-        # حذف خودکار تصاویر به دلیل CASCADE در دیتابیس انجام می‌شود
         with conn.cursor() as cur:
             cur.execute("delete from properties where file_code=%s", (file_code.strip(),))
         clear_caches()
         st.success("فایل حذف شد.")
         st.rerun()
 
-    # ---------- بخش مدیریت تصاویر ----------
-    if file_code.strip():
-        st.divider()
-        vip_title("مدیریت تصاویر")
-        st.caption("می‌توانید تصاویر جدید اضافه کنید یا تصاویر موجود را حذف کنید.")
+def admin_manage_images_tab():
+    vip_title("مدیریت تصاویر فایل‌ها")
+    st.caption("در این بخش می‌توانید برای هر فایل، تصاویر را آپلود یا حذف کنید.")
 
-        # نمایش تصاویر موجود
-        images_df = get_property_images(file_code.strip())
-        if not images_df.empty:
-            st.subheader("تصاویر موجود")
-            cols = st.columns(min(3, len(images_df)))
-            for idx, row in images_df.iterrows():
-                with cols[idx % len(cols)]:
-                    st.image(row["image_url"], use_container_width=True)
-                    if st.button(f"🗑 حذف تصویر {idx+1}", key=f"del_img_{row['id']}"):
-                        delete_property_image(row["id"], row["image_url"])
-                        st.rerun()
+    conn_local = get_conn_safe()
+    files_df = pd.read_sql_query("select file_code, property_type, region from properties order by file_code", conn_local)
+    if files_df.empty:
+        st.info("هیچ فایلی در دیتابیس وجود ندارد. ابتدا فایل‌ها را وارد کنید.")
+        return
+
+    file_code = st.selectbox(
+        "انتخاب کد فایل",
+        options=files_df["file_code"].tolist(),
+        format_func=lambda x: f"{x} - {files_df.loc[files_df['file_code']==x, 'property_type'].iloc[0]} - {files_df.loc[files_df['file_code']==x, 'region'].iloc[0]}",
+        key="img_file_code"
+    )
+
+    if not file_code:
+        return
+
+    images_df = get_property_images(file_code)
+    st.subheader("تصاویر موجود")
+    if not images_df.empty:
+        cols = st.columns(min(3, len(images_df)))
+        for idx, row in images_df.iterrows():
+            with cols[idx % len(cols)]:
+                st.image(row["image_url"], use_container_width=True)
+                if st.button(f"🗑 حذف تصویر {idx+1}", key=f"del_img_{row['id']}"):
+                    delete_property_image(row["id"], row["image_url"])
+                    st.rerun()
+    else:
+        st.info("هیچ تصویری برای این فایل ثبت نشده است.")
+
+    st.subheader("آپلود تصاویر جدید")
+    uploaded_files = st.file_uploader(
+        "انتخاب تصاویر (JPEG, PNG)",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        key="img_uploader_admin"
+    )
+    if uploaded_files and st.button("آپلود تصاویر", key="upload_images_btn_admin"):
+        if supabase is None:
+            st.error("سرویس Supabase در دسترس نیست. لطفاً متغیرهای محیطی SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY را تنظیم کنید.")
         else:
-            st.info("هیچ تصویری برای این فایل ثبت نشده است.")
-
-        # آپلود تصاویر جدید
-        st.subheader("آپلود تصاویر جدید")
-        uploaded_files = st.file_uploader(
-            "انتخاب تصاویر (JPEG, PNG)",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-            key="img_uploader"
-        )
-        if uploaded_files and st.button("آپلود تصاویر", key="upload_images_btn"):
-            if supabase is None:
-                st.error("سرویس Supabase در دسترس نیست. لطفاً متغیرهای محیطی را بررسی کنید.")
-            else:
-                for uf in uploaded_files:
-                    url = upload_property_image(file_code.strip(), uf)
-                    if url:
-                        # ذخیره در دیتابیس
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                "insert into property_images (file_code, image_url, sort_order) values (%s, %s, %s)",
-                                (file_code.strip(), url, 0)
-                            )
-                st.success("تصاویر آپلود و ثبت شدند.")
-                st.rerun()
+            for uf in uploaded_files:
+                url = upload_property_image(file_code, uf)
+                if url:
+                    with conn_local.cursor() as cur:
+                        cur.execute(
+                            "insert into property_images (file_code, image_url, sort_order) values (%s, %s, %s)",
+                            (file_code, url, 0)
+                        )
+            st.success("تصاویر با موفقیت آپلود و ثبت شدند.")
+            st.rerun()
 
 def admin_upload_tab():
     vip_title("آپلود / بروزرسانی اکسل (مدیر)")
@@ -1232,7 +1224,7 @@ def admin_upload_tab():
         st.rerun()
 
 # =========================
-# Applicants (Admin) بدون تغییر
+# Applicants (Admin)
 # =========================
 def applicants_match_query(app_row: dict) -> pd.DataFrame:
     where = ["1=1"]
@@ -1395,7 +1387,7 @@ def applicants_tab():
 # Main Tabs
 # =========================
 if is_admin:
-    t1, t2, t3, t4, t5 = st.tabs(["لیست فایل‌ها", "آپلود/آپدیت", "ثبت/ویرایش فایل", "متقاضیان", "راهنما"])
+    t1, t2, t3, t4, t5, t6 = st.tabs(["لیست فایل‌ها", "آپلود/آپدیت", "ثبت/ویرایش فایل", "مدیریت تصاویر", "متقاضیان", "راهنما"])
     with t1:
         admin_files_list_tab()
     with t2:
@@ -1403,8 +1395,10 @@ if is_admin:
     with t3:
         admin_add_edit_property_tab()
     with t4:
-        applicants_tab()
+        admin_manage_images_tab()
     with t5:
+        applicants_tab()
+    with t6:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
 else:
