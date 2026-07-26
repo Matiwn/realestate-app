@@ -10,7 +10,7 @@ from supabase import create_client, Client
 # =========================
 # Streamlit config (MUST be first st.*)
 # =========================
-st.set_page_config(page_title="مشاور املاک نور", layout="wide")
+st.set_page_config(page_title="Matin Realty", layout="wide")
 
 # =========================
 # ENV
