@@ -324,7 +324,7 @@ def show_vip_logo():
           <div class="noor-vip-card">
             <img src="{NOOR_LOGO_URL}" alt="Noor Logo" />
           </div>
-          <div class="noor-vip-header-title">مشاور املاک نور</div>
+          <div class="noor-vip-header-title">متین ریلتی|Matin Realty</div>
           <div class="noor-vip-sub">سیستم مدیریت فایل‌ها و متقاضیان</div>
         </div>
         """,
