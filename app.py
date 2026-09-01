@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from datetime import datetime
 
 import pandas as pd
@@ -462,6 +463,8 @@ def ensure_tables(conn):
           address text,
           area_m2 numeric,
           price_million numeric,
+          deposit_million numeric,
+          rent_million numeric,
           property_type text,
           bedrooms integer,
           description text,
@@ -507,8 +510,44 @@ def ensure_tables(conn):
         """)
         cur.execute("create index if not exists idx_images_file_code on property_images(file_code);")
 
+        # فایل‌های ثبت‌شده توسط مشتری: تا قبل از تایید مدیر وارد جدول properties نمی‌شوند
+        cur.execute("""
+        create table if not exists property_submissions (
+          id bigserial primary key,
+          file_code text,
+          submitter_name text not null,
+          submitter_phone text not null,
+          deal_type text,
+          region text,
+          address text,
+          area_m2 numeric,
+          price_million numeric,
+          deposit_million numeric,
+          rent_million numeric,
+          property_type text,
+          bedrooms integer,
+          floor text,
+          total_floors text,
+          year_built text,
+          parking text,
+          elevator text,
+          storage text,
+          document_status text,
+          description text,
+          extra_features text,
+          image_urls text[] default '{}',
+          status text not null default 'pending',
+          admin_note text,
+          created_at timestamp default now(),
+          reviewed_at timestamp
+        );
+        """)
+        cur.execute("create index if not exists idx_property_submissions_status on property_submissions(status);")
+
         # اضافه کردن ستون‌های قدیمی در صورت نبود
         cur.execute("alter table properties add column if not exists bedrooms integer;")
+        cur.execute("alter table properties add column if not exists deposit_million numeric;")
+        cur.execute("alter table properties add column if not exists rent_million numeric;")
         cur.execute("alter table properties add column if not exists description text;")
         cur.execute("alter table applicants add column if not exists notes text;")
         cur.execute("alter table applicants add column if not exists bedrooms_min integer;")
@@ -732,6 +771,240 @@ def upsert_properties(conn, df: pd.DataFrame) -> int:
             ))
             rows += 1
     return rows
+
+# =========================
+# Client submissions / approval workflow
+# =========================
+def generate_submission_code() -> str:
+    return "C-" + datetime.utcnow().strftime("%y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:4].upper()
+
+
+def client_add_property_tab():
+    vip_title("ثبت فایل ملک")
+    st.info("فایل شما ابتدا برای مدیر ارسال می‌شود و تا زمان تایید مدیر، در لیست فایل‌ها نمایش داده نخواهد شد.")
+
+    with st.form("client_property_submission_form"):
+        st.subheader("اطلاعات تماس مالک / ثبت‌کننده")
+        c1, c2 = st.columns(2)
+        with c1:
+            submitter_name = st.text_input("نام و نام خانوادگی *", key="sub_name")
+        with c2:
+            submitter_phone = st.text_input("شماره تماس *", key="sub_phone")
+
+        st.subheader("اطلاعات اصلی ملک")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            deal_type = st.selectbox("نوع معامله *", ["خرید و فروش", "رهن و اجاره"], key="sub_deal")
+        with c2:
+            property_type = st.text_input("نوع ملک *", placeholder="آپارتمان، زمین، ویلا، مغازه...", key="sub_ptype")
+        with c3:
+            region = st.text_input("منطقه / محله *", key="sub_region")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            area_m2 = st.number_input("متراژ *", min_value=0.0, value=0.0, step=1.0, key="sub_area")
+        with c2:
+            bedrooms = st.number_input("تعداد خواب", min_value=0, value=0, step=1, key="sub_bed")
+        with c3:
+            address = st.text_input("آدرس / محدوده", key="sub_address")
+
+        st.subheader("قیمت")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            price_million = st.number_input("قیمت کل (میلیون تومان)", min_value=0.0, value=0.0, step=50.0, key="sub_price")
+        with c2:
+            deposit_million = st.number_input("رهن / ودیعه (میلیون تومان)", min_value=0.0, value=0.0, step=50.0, key="sub_deposit")
+        with c3:
+            rent_million = st.number_input("اجاره ماهانه (میلیون تومان)", min_value=0.0, value=0.0, step=1.0, key="sub_rent")
+
+        st.subheader("مشخصات تکمیلی")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            floor = st.text_input("طبقه", key="sub_floor")
+        with c2:
+            total_floors = st.text_input("تعداد طبقات ساختمان", key="sub_total_floors")
+        with c3:
+            year_built = st.text_input("سال ساخت", key="sub_year")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            parking = st.text_input("پارکینگ", placeholder="دارد / ندارد / تعداد", key="sub_parking")
+        with c2:
+            elevator = st.text_input("آسانسور", placeholder="دارد / ندارد", key="sub_elevator")
+        with c3:
+            storage = st.text_input("انباری", placeholder="دارد / ندارد", key="sub_storage")
+        with c4:
+            document_status = st.text_input("وضعیت سند", placeholder="تک‌برگ، قولنامه‌ای...", key="sub_doc")
+
+        description = st.text_area("توضیحات کامل", placeholder="شرایط فروش، امکانات، نورگیری، جهت، وضعیت تخلیه و هر نکته مهم دیگر...", key="sub_desc")
+        extra_features = st.text_area("امکانات و ویژگی‌های بیشتر", placeholder="بالکن، تراس، حیاط، استخر، بازسازی، کابینت و...", key="sub_features")
+        suggested_code = st.text_input("کد فایل پیشنهادی (اختیاری)", key="sub_code", help="اگر خالی باشد، سیستم یک کد موقت برای درخواست ایجاد می‌کند و مدیر می‌تواند کد نهایی را تعیین کند.")
+        images = st.file_uploader("تصاویر ملک (اختیاری، JPG/PNG)", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="sub_images")
+
+        submit = st.form_submit_button("📨 ارسال فایل برای بررسی مدیر")
+
+    if not submit:
+        return
+
+    if not normalize_text(submitter_name) or not normalize_text(submitter_phone):
+        st.error("نام و شماره تماس الزامی است.")
+        return
+    if not normalize_text(property_type) or not normalize_text(region) or area_m2 <= 0:
+        st.error("نوع ملک، منطقه و متراژ الزامی است.")
+        return
+    if deal_type == "خرید و فروش" and price_million <= 0:
+        st.error("برای فایل فروش، قیمت کل را وارد کنید.")
+        return
+    if deal_type == "رهن و اجاره" and deposit_million <= 0 and rent_million <= 0:
+        st.error("برای فایل اجاره، حداقل رهن یا اجاره ماهانه را وارد کنید.")
+        return
+
+    submission_code = normalize_text(suggested_code) or generate_submission_code()
+    with conn.cursor() as cur:
+        cur.execute("""
+            insert into property_submissions
+            (file_code, submitter_name, submitter_phone, deal_type, region, address, area_m2,
+             price_million, deposit_million, rent_million, property_type, bedrooms, floor,
+             total_floors, year_built, parking, elevator, storage, document_status,
+             description, extra_features, status, created_at)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',now())
+            returning id
+        """, (
+            submission_code, normalize_text(submitter_name), normalize_text(submitter_phone),
+            normalize_deal_type(deal_type), normalize_text(region), normalize_text(address),
+            float(area_m2), float(price_million) if price_million else None,
+            float(deposit_million) if deposit_million else None, float(rent_million) if rent_million else None,
+            normalize_text(property_type), int(bedrooms) if bedrooms else 0, normalize_text(floor),
+            normalize_text(total_floors), normalize_text(year_built), normalize_text(parking),
+            normalize_text(elevator), normalize_text(storage), normalize_text(document_status),
+            normalize_text(description), normalize_text(extra_features)
+        ))
+        submission_id = int(cur.fetchone()[0])
+
+    uploaded_urls = []
+    if images and supabase is not None:
+        for image in images:
+            url = upload_property_image(f"pending-{submission_id}", image)
+            if url:
+                uploaded_urls.append(url)
+    elif images and supabase is None:
+        st.warning("فایل ثبت شد ولی سرویس تصاویر در دسترس نیست؛ تصاویر ذخیره نشدند.")
+
+    if uploaded_urls:
+        with conn.cursor() as cur:
+            cur.execute("update property_submissions set image_urls=%s where id=%s", (uploaded_urls, submission_id))
+
+    st.success(f"فایل با موفقیت برای بررسی مدیر ارسال شد. کد درخواست: {submission_code}")
+    st.info("تا زمان تایید مدیر، این فایل برای سایر مشتری‌ها قابل مشاهده نیست.")
+
+
+def client_my_submissions_tab():
+    vip_title("وضعیت فایل‌های ارسالی")
+    phone = st.text_input("شماره تماس ثبت‌کننده را وارد کنید", key="sub_status_phone")
+    if not normalize_text(phone):
+        st.caption("با وارد کردن شماره تماس، وضعیت درخواست‌های ثبت‌شده نمایش داده می‌شود.")
+        return
+    df = pd.read_sql_query("""
+        select file_code, property_type, region, area_m2, price_million, deposit_million,
+               rent_million, status, admin_note, created_at, reviewed_at
+        from property_submissions
+        where submitter_phone=%s
+        order by created_at desc
+        limit 100
+    """, conn, params=(normalize_text(phone),))
+    if df.empty:
+        st.info("درخواستی با این شماره پیدا نشد.")
+        return
+    status_map = {"pending": "⏳ در انتظار تایید مدیر", "approved": "✅ تایید شده", "rejected": "❌ رد شده"}
+    df["وضعیت"] = df["status"].map(status_map).fillna(df["status"])
+    show = df.rename(columns={
+        "file_code":"کد درخواست", "property_type":"نوع ملک", "region":"منطقه", "area_m2":"متراژ",
+        "price_million":"قیمت (میلیون)", "deposit_million":"رهن (میلیون)",
+        "rent_million":"اجاره (میلیون)", "admin_note":"پاسخ مدیر", "created_at":"تاریخ ثبت",
+        "reviewed_at":"تاریخ بررسی"
+    })
+    cols = ["کد درخواست","نوع ملک","منطقه","متراژ","قیمت (میلیون)","رهن (میلیون)","اجاره (میلیون)","وضعیت","پاسخ مدیر","تاریخ ثبت","تاریخ بررسی"]
+    st.dataframe(show[cols], use_container_width=True, hide_index=True)
+
+
+def admin_submissions_tab():
+    vip_title("بررسی فایل‌های ارسالی مشتریان")
+    status_filter = st.selectbox("فیلتر وضعیت", ["در انتظار", "تایید شده", "رد شده", "همه"], key="sub_status_filter")
+    status_db = {"در انتظار":"pending", "تایید شده":"approved", "رد شده":"rejected"}
+    where = "" if status_filter == "همه" else "where status=%s"
+    params = () if status_filter == "همه" else (status_db[status_filter],)
+    df = pd.read_sql_query(f"""
+        select id, file_code, submitter_name, submitter_phone, deal_type, property_type, region,
+               area_m2, price_million, deposit_million, rent_million, bedrooms, floor, total_floors,
+               year_built, parking, elevator, storage, document_status, address, description,
+               extra_features, image_urls, status, admin_note, created_at
+        from property_submissions {where} order by created_at desc limit 300
+    """, conn, params=params)
+    if df.empty:
+        st.info("درخواستی برای نمایش وجود ندارد.")
+        return
+
+    labels = {"pending":"⏳ در انتظار", "approved":"✅ تایید شده", "rejected":"❌ رد شده"}
+    for _, r in df.iterrows():
+        sid = int(r["id"])
+        title = f"#{sid} | {r['file_code'] or 'بدون کد'} | {r['property_type'] or 'ملک'} | {r['region'] or ''} | {labels.get(r['status'], r['status'])}"
+        with st.expander(title, expanded=(r["status"] == "pending")):
+            c1, c2, c3 = st.columns(3)
+            c1.write(f"**ثبت‌کننده:** {r['submitter_name']}")
+            c2.write(f"**تلفن:** {r['submitter_phone']}")
+            c3.write(f"**نوع معامله:** {r['deal_type']}")
+            st.write(f"**آدرس:** {r['address'] or '—'}")
+            st.write(f"**متراژ:** {r['area_m2'] or '—'} | **خواب:** {r['bedrooms'] or '—'} | **قیمت:** {billion_str_from_million(r['price_million']) or '—'}")
+            if r['deal_type'] == 'رهن و اجاره':
+                st.write(f"**رهن:** {billion_str_from_million(r['deposit_million']) or '—'} | **اجاره:** {r['rent_million'] or '—'} میلیون تومان")
+            st.write(f"**طبقه:** {r['floor'] or '—'} | **طبقات:** {r['total_floors'] or '—'} | **سال ساخت:** {r['year_built'] or '—'}")
+            st.write(f"**پارکینگ:** {r['parking'] or '—'} | **آسانسور:** {r['elevator'] or '—'} | **انباری:** {r['storage'] or '—'} | **سند:** {r['document_status'] or '—'}")
+            st.write(f"**توضیحات:** {r['description'] or '—'}")
+            st.write(f"**ویژگی‌ها:** {r['extra_features'] or '—'}")
+
+            image_urls = r.get("image_urls") or []
+            if image_urls:
+                st.markdown("**تصاویر:**")
+                cols = st.columns(min(4, len(image_urls)))
+                for i, url in enumerate(image_urls):
+                    with cols[i % len(cols)]:
+                        st.image(url, use_container_width=True)
+
+            if r["status"] == "pending":
+                final_code = st.text_input("کد نهایی فایل در صورت تایید", value=str(r["file_code"] or generate_submission_code()), key=f"final_code_{sid}")
+                admin_note = st.text_area("یادداشت / پاسخ مدیر", key=f"admin_note_{sid}")
+                a, b = st.columns(2)
+                if a.button("✅ تایید و انتشار فایل", key=f"approve_{sid}"):
+                    final_code = normalize_text(final_code)
+                    if not final_code:
+                        st.error("کد نهایی فایل الزامی است.")
+                        continue
+                    exists = pd.read_sql_query("select file_code from properties where file_code=%s", conn, params=(final_code,))
+                    if not exists.empty:
+                        st.error("این کد فایل قبلاً در سیستم استفاده شده است. یک کد دیگر انتخاب کنید.")
+                        continue
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            insert into properties
+                            (file_code, deal_type, region, address, area_m2, price_million, deposit_million, rent_million, property_type, bedrooms,
+                             description, owner_name, owner_phone, internal_notes, updated_at)
+                            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+                        """, (final_code, r['deal_type'], r['region'], r['address'], r['area_m2'],
+                              (r['price_million'] if r['price_million'] is not None else (r['deposit_million'] if r['deposit_million'] is not None else r['rent_million'])),
+                              r['deposit_million'], r['rent_million'], r['property_type'], r['bedrooms'], r['description'], r['submitter_name'], r['submitter_phone'],
+                              f"ویژگی‌ها: {r['extra_features'] or ''} | طبقه: {r['floor'] or ''} | طبقات: {r['total_floors'] or ''} | سال ساخت: {r['year_built'] or ''} | پارکینگ: {r['parking'] or ''} | آسانسور: {r['elevator'] or ''} | انباری: {r['storage'] or ''} | سند: {r['document_status'] or ''}"))
+                        for i, url in enumerate(image_urls):
+                            cur.execute("insert into property_images(file_code, image_url, sort_order) values (%s,%s,%s)", (final_code, url, i))
+                        cur.execute("update property_submissions set status='approved', file_code=%s, admin_note=%s, reviewed_at=now() where id=%s", (final_code, normalize_text(admin_note), sid))
+                    clear_caches()
+                    st.success("فایل تایید و منتشر شد.")
+                    st.rerun()
+                if b.button("❌ رد درخواست", key=f"reject_{sid}"):
+                    with conn.cursor() as cur:
+                        cur.execute("update property_submissions set status='rejected', admin_note=%s, reviewed_at=now() where id=%s", (normalize_text(admin_note), sid))
+                    st.warning("درخواست رد شد و در سایت منتشر نشد.")
+                    st.rerun()
+            else:
+                st.caption(f"یادداشت مدیر: {r['admin_note'] or '—'}")
 
 # =========================
 # Client UI
@@ -1387,7 +1660,7 @@ def applicants_tab():
 # Main Tabs
 # =========================
 if is_admin:
-    t1, t2, t3, t4, t5, t6 = st.tabs(["لیست فایل‌ها", "آپلود/آپدیت", "ثبت/ویرایش فایل", "مدیریت تصاویر", "متقاضیان", "راهنما"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["لیست فایل‌ها", "آپلود/آپدیت", "ثبت/ویرایش فایل", "مدیریت تصاویر", "متقاضیان", "فایل‌های مشتریان", "راهنما"])
     with t1:
         admin_files_list_tab()
     with t2:
@@ -1399,12 +1672,18 @@ if is_admin:
     with t5:
         applicants_tab()
     with t6:
+        admin_submissions_tab()
+    with t7:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
 else:
-    t1, t2 = st.tabs(["فایل‌ها", "راهنما"])
+    t1, t2, t3 = st.tabs(["فایل‌ها", "ثبت فایل", "وضعیت فایل‌های من"])
     with t1:
         client_files_tab()
     with t2:
+        client_add_property_tab()
+    with t3:
+        client_my_submissions_tab()
+    with st.expander("راهنما", expanded=False):
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
