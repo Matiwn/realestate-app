@@ -1,6 +1,8 @@
 import os
 import re
 import uuid
+import hashlib
+import secrets
 from datetime import datetime
 
 import pandas as pd
@@ -510,10 +512,23 @@ def ensure_tables(conn):
         """)
         cur.execute("create index if not exists idx_images_file_code on property_images(file_code);")
 
+        # حساب‌های مستقل مشتریان
+        cur.execute("""
+        create table if not exists customers (
+          id bigserial primary key,
+          full_name text not null,
+          mobile text not null unique,
+          password_hash text not null,
+          is_active boolean not null default true,
+          created_at timestamp default now()
+        );
+        """)
+
         # فایل‌های ثبت‌شده توسط مشتری: تا قبل از تایید مدیر وارد جدول properties نمی‌شوند
         cur.execute("""
         create table if not exists property_submissions (
           id bigserial primary key,
+          customer_id bigint references customers(id) on delete set null,
           file_code text,
           submitter_name text not null,
           submitter_phone text not null,
@@ -542,7 +557,9 @@ def ensure_tables(conn):
           reviewed_at timestamp
         );
         """)
+        cur.execute("alter table property_submissions add column if not exists customer_id bigint references customers(id) on delete set null;")
         cur.execute("create index if not exists idx_property_submissions_status on property_submissions(status);")
+        cur.execute("create index if not exists idx_property_submissions_customer on property_submissions(customer_id);")
 
         # اضافه کردن ستون‌های قدیمی در صورت نبود
         cur.execute("alter table properties add column if not exists bedrooms integer;")
@@ -638,42 +655,140 @@ def clear_caches():
         pass
 
 # =========================
-# Auth
-# =========================
-if "role" not in st.session_state:
-    st.session_state.role = None
-
-with st.sidebar:
-    st.header("ورود")
-    role_ui = st.selectbox("نقش", ["مشتری", "مدیر"], key="login_role")
-    pwd = st.text_input("رمز", type="password", key="login_pwd")
-
-    c1, c2 = st.columns(2)
-    if c1.button("ورود", key="login_btn"):
-        if role_ui == "مدیر" and pwd == ADMIN_PASSWORD:
-            st.session_state.role = "admin"
-            st.success("ورود مدیر موفق بود.")
-        elif role_ui == "مشتری" and pwd == CLIENT_PASSWORD:
-            st.session_state.role = "client"
-            st.success("ورود مشتری موفق بود.")
-        else:
-            st.error("رمز اشتباه است.")
-    if c2.button("خروج", key="logout_btn"):
-        st.session_state.role = None
-        st.info("خارج شدید.")
-
-if st.session_state.role is None:
-    show_vip_logo()
-    st.warning("برای استفاده از برنامه، از نوار کناری وارد شوید.")
-    st.stop()
-
-is_admin = st.session_state.role == "admin"
-
-# =========================
-# Init DB
+# Init DB (before authentication)
 # =========================
 conn = get_conn_safe()
 ensure_tables(conn)
+
+# =========================
+# Auth helpers
+# =========================
+def normalize_mobile(value: str) -> str:
+    s = normalize_text(value).replace(" ", "").replace("-", "")
+    if s.startswith("+98"):
+        s = "0" + s[3:]
+    if s.startswith("98") and len(s) == 12:
+        s = "0" + s[2:]
+    return s
+
+def valid_mobile(value: str) -> bool:
+    return bool(re.fullmatch(r"09\d{9}", normalize_mobile(value)))
+
+def hash_password(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 180_000).hex()
+    return f"pbkdf2_sha256$180000${salt}${digest}"
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algo, iterations, salt, digest = stored.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        calc = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations)).hex()
+        return secrets.compare_digest(calc, digest)
+    except Exception:
+        return False
+
+def get_customer_by_mobile(mobile: str):
+    m = normalize_mobile(mobile)
+    df = pd.read_sql_query("select id, full_name, mobile, password_hash, is_active from customers where mobile=%s limit 1", conn, params=(m,))
+    return None if df.empty else df.iloc[0].to_dict()
+
+if "role" not in st.session_state:
+    st.session_state.role = None
+if "customer_id" not in st.session_state:
+    st.session_state.customer_id = None
+if "customer_name" not in st.session_state:
+    st.session_state.customer_name = None
+
+with st.sidebar:
+    st.header("ورود به سامانه")
+    if st.session_state.role is None:
+        auth_mode = st.radio("نوع دسترسی", ["ورود مشتری", "ثبت‌نام مشتری", "ورود مدیر", "ورود به عنوان مهمان"], key="auth_mode")
+
+        if auth_mode == "ورود مشتری":
+            mobile = st.text_input("شماره موبایل", placeholder="0912xxxxxxx", key="login_mobile")
+            pwd = st.text_input("رمز عبور", type="password", key="login_customer_pwd")
+            if st.button("🔐 ورود", key="customer_login_btn"):
+                mobile_n = normalize_mobile(mobile)
+                customer = get_customer_by_mobile(mobile_n)
+                if not valid_mobile(mobile_n):
+                    st.error("شماره موبایل معتبر وارد کنید.")
+                elif not customer or not customer["is_active"] or not verify_password(pwd, customer["password_hash"]):
+                    st.error("شماره موبایل یا رمز عبور اشتباه است.")
+                else:
+                    st.session_state.role = "client"
+                    st.session_state.customer_id = int(customer["id"])
+                    st.session_state.customer_name = customer["full_name"]
+                    st.success(f"خوش آمدید {customer['full_name']}")
+                    st.rerun()
+
+        elif auth_mode == "ثبت‌نام مشتری":
+            name = st.text_input("نام و نام خانوادگی *", key="reg_name")
+            mobile = st.text_input("شماره موبایل *", placeholder="0912xxxxxxx", key="reg_mobile")
+            pwd1 = st.text_input("رمز عبور *", type="password", key="reg_pwd1")
+            pwd2 = st.text_input("تکرار رمز عبور *", type="password", key="reg_pwd2")
+            if st.button("📝 ایجاد حساب مشتری", key="register_customer_btn"):
+                mobile_n = normalize_mobile(mobile)
+                if not normalize_text(name):
+                    st.error("نام و نام خانوادگی الزامی است.")
+                elif not valid_mobile(mobile_n):
+                    st.error("شماره موبایل باید به شکل 09xxxxxxxxx باشد.")
+                elif len(pwd1) < 6:
+                    st.error("رمز عبور باید حداقل ۶ کاراکتر باشد.")
+                elif pwd1 != pwd2:
+                    st.error("تکرار رمز عبور مطابقت ندارد.")
+                elif get_customer_by_mobile(mobile_n):
+                    st.error("با این شماره موبایل قبلاً حساب ساخته شده است.")
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute("insert into customers(full_name,mobile,password_hash) values (%s,%s,%s) returning id", (normalize_text(name), mobile_n, hash_password(pwd1)))
+                        cid = int(cur.fetchone()[0])
+                    st.session_state.role = "client"
+                    st.session_state.customer_id = cid
+                    st.session_state.customer_name = normalize_text(name)
+                    st.success("حساب شما با موفقیت ساخته شد.")
+                    st.rerun()
+
+        elif auth_mode == "ورود مدیر":
+            pwd = st.text_input("رمز مدیر", type="password", key="login_admin_pwd")
+            if st.button("🔐 ورود مدیر", key="admin_login_btn"):
+                if pwd == ADMIN_PASSWORD:
+                    st.session_state.role = "admin"
+                    st.session_state.customer_id = None
+                    st.session_state.customer_name = None
+                    st.success("ورود مدیر موفق بود.")
+                    st.rerun()
+                else:
+                    st.error("رمز مدیر اشتباه است.")
+
+        else:
+            if st.button("👁️ ورود به عنوان مهمان", key="guest_login_btn"):
+                st.session_state.role = "guest"
+                st.session_state.customer_id = None
+                st.session_state.customer_name = None
+                st.rerun()
+    else:
+        if st.session_state.role == "admin":
+            st.success("ورود به عنوان مدیر")
+        elif st.session_state.role == "client":
+            st.success(f"مشتری: {st.session_state.customer_name or 'کاربر'}")
+        else:
+            st.info("ورود به عنوان مهمان")
+        if st.button("🚪 خروج", key="logout_btn"):
+            st.session_state.role = None
+            st.session_state.customer_id = None
+            st.session_state.customer_name = None
+            st.rerun()
+
+if st.session_state.role is None:
+    show_vip_logo()
+    st.info("برای مشاهده فایل‌ها، به عنوان مهمان وارد شوید یا حساب مشتری بسازید.")
+    st.stop()
+
+is_admin = st.session_state.role == "admin"
+is_client = st.session_state.role == "client"
+is_guest = st.session_state.role == "guest"
 
 show_vip_logo()
 
@@ -784,12 +899,11 @@ def client_add_property_tab():
     st.info("فایل شما ابتدا برای مدیر ارسال می‌شود و تا زمان تایید مدیر، در لیست فایل‌ها نمایش داده نخواهد شد.")
 
     with st.form("client_property_submission_form"):
-        st.subheader("اطلاعات تماس مالک / ثبت‌کننده")
-        c1, c2 = st.columns(2)
-        with c1:
-            submitter_name = st.text_input("نام و نام خانوادگی *", key="sub_name")
-        with c2:
-            submitter_phone = st.text_input("شماره تماس *", key="sub_phone")
+        st.subheader("اطلاعات ثبت‌کننده")
+        st.info(f"ثبت فایل با حساب: **{st.session_state.customer_name}** | شماره موبایل در حساب شما ثبت شده و فقط مدیر آن را می‌بیند.")
+        submitter_name = st.session_state.customer_name
+        customer = pd.read_sql_query("select mobile from customers where id=%s", conn, params=(st.session_state.customer_id,))
+        submitter_phone = customer.iloc[0]["mobile"] if not customer.empty else ""
 
         st.subheader("اطلاعات اصلی ملک")
         c1, c2, c3 = st.columns(3)
@@ -845,8 +959,8 @@ def client_add_property_tab():
     if not submit:
         return
 
-    if not normalize_text(submitter_name) or not normalize_text(submitter_phone):
-        st.error("نام و شماره تماس الزامی است.")
+    if not st.session_state.customer_id:
+        st.error("برای ثبت فایل باید وارد حساب مشتری شوید.")
         return
     if not normalize_text(property_type) or not normalize_text(region) or area_m2 <= 0:
         st.error("نوع ملک، منطقه و متراژ الزامی است.")
@@ -862,14 +976,14 @@ def client_add_property_tab():
     with conn.cursor() as cur:
         cur.execute("""
             insert into property_submissions
-            (file_code, submitter_name, submitter_phone, deal_type, region, address, area_m2,
+            (customer_id, file_code, submitter_name, submitter_phone, deal_type, region, address, area_m2,
              price_million, deposit_million, rent_million, property_type, bedrooms, floor,
              total_floors, year_built, parking, elevator, storage, document_status,
              description, extra_features, status, created_at)
             values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',now())
             returning id
         """, (
-            submission_code, normalize_text(submitter_name), normalize_text(submitter_phone),
+            int(st.session_state.customer_id), submission_code, normalize_text(submitter_name), normalize_text(submitter_phone),
             normalize_deal_type(deal_type), normalize_text(region), normalize_text(address),
             float(area_m2), float(price_million) if price_million else None,
             float(deposit_million) if deposit_million else None, float(rent_million) if rent_million else None,
@@ -899,18 +1013,17 @@ def client_add_property_tab():
 
 def client_my_submissions_tab():
     vip_title("وضعیت فایل‌های ارسالی")
-    phone = st.text_input("شماره تماس ثبت‌کننده را وارد کنید", key="sub_status_phone")
-    if not normalize_text(phone):
-        st.caption("با وارد کردن شماره تماس، وضعیت درخواست‌های ثبت‌شده نمایش داده می‌شود.")
+    if not st.session_state.customer_id:
+        st.error("این بخش فقط برای مشتریان واردشده است.")
         return
     df = pd.read_sql_query("""
         select file_code, property_type, region, area_m2, price_million, deposit_million,
                rent_million, status, admin_note, created_at, reviewed_at
         from property_submissions
-        where submitter_phone=%s
+        where customer_id=%s
         order by created_at desc
         limit 100
-    """, conn, params=(normalize_text(phone),))
+    """, conn, params=(int(st.session_state.customer_id),))
     if df.empty:
         st.info("درخواستی با این شماره پیدا نشد.")
         return
@@ -933,7 +1046,7 @@ def admin_submissions_tab():
     where = "" if status_filter == "همه" else "where status=%s"
     params = () if status_filter == "همه" else (status_db[status_filter],)
     df = pd.read_sql_query(f"""
-        select id, file_code, submitter_name, submitter_phone, deal_type, property_type, region,
+        select id, customer_id, file_code, submitter_name, submitter_phone, deal_type, property_type, region,
                area_m2, price_million, deposit_million, rent_million, bedrooms, floor, total_floors,
                year_built, parking, elevator, storage, document_status, address, description,
                extra_features, image_urls, status, admin_note, created_at
@@ -951,7 +1064,8 @@ def admin_submissions_tab():
             c1, c2, c3 = st.columns(3)
             c1.write(f"**ثبت‌کننده:** {r['submitter_name']}")
             c2.write(f"**تلفن:** {r['submitter_phone']}")
-            c3.write(f"**نوع معامله:** {r['deal_type']}")
+            c3.write(f"**شناسه مشتری:** {r.get('customer_id') or 'قدیمی/بدون حساب'}")
+            st.write(f"**نوع معامله:** {r['deal_type']}")
             st.write(f"**آدرس:** {r['address'] or '—'}")
             st.write(f"**متراژ:** {r['area_m2'] or '—'} | **خواب:** {r['bedrooms'] or '—'} | **قیمت:** {billion_str_from_million(r['price_million']) or '—'}")
             if r['deal_type'] == 'رهن و اجاره':
@@ -1016,7 +1130,7 @@ def client_property_detail(code: str):
         select file_code, deal_type, region, property_type, bedrooms, area_m2, price_million,
                address, description, updated_at
         from properties
-        where file_code=%s
+        where file_code=%s and exists (select 1 from properties p2 where p2.file_code=properties.file_code)
         """,
         conn,
         params=(code,),
@@ -1677,13 +1791,16 @@ if is_admin:
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
 else:
-    t1, t2, t3 = st.tabs(["فایل‌ها", "ثبت فایل", "وضعیت فایل‌های من"])
-    with t1:
+    if is_client:
+        t1, t2, t3 = st.tabs(["فایل‌ها", "ثبت فایل", "وضعیت فایل‌های من"])
+        with t1:
+            client_files_tab()
+        with t2:
+            client_add_property_tab()
+        with t3:
+            client_my_submissions_tab()
+    else:
         client_files_tab()
-    with t2:
-        client_add_property_tab()
-    with t3:
-        client_my_submissions_tab()
     with st.expander("راهنما", expanded=False):
         vip_title("راهنما")
         st.write("قیمت‌ها بر حسب **میلیون** هستند. مثال: **۵ میلیارد = ۵۰۰۰**")
